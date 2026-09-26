@@ -1,0 +1,82 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<pnml>
+  <net id="Схема 1 (простая): жёсткий диск" type="http://www.pnml.org/version-2009/grammar/pnmlcoremodel">
+    <name>
+      <text>Схема 1 (простая): жёсткий диск</text>
+    </name>
+    <page id="n0">
+      <place id="p_start">
+        <name>
+          <text>p_start</text>
+        </name>
+        <initialMarking>
+          <text>1</text>
+        </initialMarking>
+      </place>
+      <place id="p_init">
+        <name>
+          <text>p_init</text>
+        </name>
+      </place>
+      <place id="p_end">
+        <name>
+          <text>p_end</text>
+        </name>
+      </place>
+      <place id="p_work">
+        <name>
+          <text>p_work</text>
+        </name>
+      </place>
+      <transition id="t_power_on">
+        <name>
+          <text>DiskPowerOn</text>
+        </name>
+      </transition>
+      <transition id="t_init">
+        <name>
+          <text>DiskInit</text>
+        </name>
+      </transition>
+      <transition id="t_io">
+        <name>
+          <text>DiskReadWrite</text>
+        </name>
+      </transition>
+      <transition id="t_shutdown">
+        <name>
+          <text>DiskShutdownOk</text>
+        </name>
+      </transition>
+      <transition id="t_idle">
+        <name>
+          <text>DiskIdle</text>
+        </name>
+      </transition>
+      <transition id="t_error">
+        <name>
+          <text>DiskCriticalError</text>
+        </name>
+      </transition>
+      <arc id="2813560979360" source="p_init" target="t_init"/>
+      <arc id="2813561131264" source="p_work" target="t_io"/>
+      <arc id="2813561131072" source="t_init" target="p_work"/>
+      <arc id="2813561131360" source="t_io" target="p_work"/>
+      <arc id="2813561131552" source="p_work" target="t_idle"/>
+      <arc id="2813561131648" source="t_idle" target="p_work"/>
+      <arc id="2813561131840" source="p_work" target="t_shutdown"/>
+      <arc id="2813561131936" source="t_shutdown" target="p_end"/>
+      <arc id="2813561132128" source="p_work" target="t_error"/>
+      <arc id="2813561132224" source="t_error" target="p_end"/>
+      <arc id="2813560979024" source="p_start" target="t_power_on"/>
+      <arc id="2813560979120" source="t_power_on" target="p_init"/>
+    </page>
+    <finalmarkings>
+      <marking>
+        <place idref="p_end">
+          <text>1</text>
+        </place>
+      </marking>
+    </finalmarkings>
+  </net>
+</pnml>
