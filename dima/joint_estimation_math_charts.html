@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Совместная оценка вероятностей выбора и распределений времени переходов в сети Петри: математика вкладов в правдоподобие, зачем оценивать вместе и качество восстановления.">
+<title>Как считаем вероятность перехода и время до него</title>
+<style>
+:root{--paper:#fbfaf7;--ink:#142735;--muted:#56687a;--faint:#8a98a5;--rule:#dde3e8;--wash:#f1f3f0;
+  --blue:#246ed0;--orange:#be5429;--choice:#1f7a5c;--time:#7b47b0;
+  --w:min(1280px,calc(100vw - 56px),calc((100dvh - 128px)*1.77778));color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:#eceeea;color:var(--ink);font-family:Arial,Helvetica,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer;background:transparent;border:1px solid var(--rule);border-radius:4px;padding:9px 13px;min-height:40px}
+button:hover{background:#e3e9ed}button:disabled{opacity:.35;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.toolbar,.controls{width:var(--w);margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px}
+.toolbar{min-height:55px}.toolbar-title{font-weight:600}.toolbar-actions{display:flex;gap:8px}.controls{min-height:61px}
+.controls-left{display:flex;align-items:center;gap:12px}.hint{color:var(--muted)}
+main{width:var(--w);margin:auto}
+.slide{position:relative;width:100%;aspect-ratio:16/9;background:var(--paper);padding:calc(var(--w)*.04) calc(var(--w)*.05);
+  font-size:calc(var(--w)*.0205);line-height:1.38;display:flex;flex-direction:column;gap:calc(var(--w)*.013);overflow:hidden}
+.slide[hidden]{display:none}
+.slide>*{flex-shrink:0}
+h1,h2,h3,p{margin:0}
+.eyebrow{font-size:.58em;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:2.5em;line-height:1.08;letter-spacing:-.03em}
+h2{font-size:1.6em;line-height:1.13;letter-spacing:-.022em}
+h3{font-size:.98em}
+.lead{font-size:1.12em}.muted{color:var(--muted)}.small{font-size:.74em}.note{font-size:.7em;color:var(--muted)}
+.cover{justify-content:center;gap:calc(var(--w)*.026)}
+.cover .eyebrow{position:absolute;top:calc(var(--w)*.045)}
+.cover .subtitle{font-size:1.22em;color:var(--blue)}
+.cover .roadmap{display:flex;gap:2.2em;margin-top:1.4em;font-size:.82em;color:var(--muted)}
+.cover .roadmap b{display:block;color:var(--ink);font-size:1.6em;font-family:"STIX Two Text",Cambria,Georgia,serif;font-weight:400}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:calc(var(--w)*.04);align-items:start}
+.grid2.wide{grid-template-columns:1.25fr 1fr}.grid2.chart{grid-template-columns:1.75fr 1fr;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(var(--w)*.03)}
+.read{font-size:.8em;color:var(--muted);margin-top:.25em}.read b{color:var(--ink);font-weight:600}
+code{font-family:Menlo,Consolas,monospace;font-size:.86em;background:#eef1ee;border-radius:4px;padding:.05em .3em}
+.takeaway{margin-top:auto;padding-top:.5em;border-top:1px solid var(--rule);font-size:.92em}
+/* math */
+math{font-family:"STIX Two Math","Cambria Math","Latin Modern Math",math;font-size:1.18em}
+.katex{display:contents}
+.eq{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:.55em 1em;overflow-x:auto}
+.eq.hero{padding:.7em 1em}.eq.hero math{font-size:1.65em}
+.eq.big math{font-size:1.38em}
+.eq.plain{background:transparent;border:0;padding:.15em 0}
+.eq-label{font-size:.6em;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.3em}
+.step{display:grid;grid-template-columns:1.6em 1fr;gap:.6em;align-items:baseline}
+.step .n{font-family:"STIX Two Text",Georgia,serif;color:var(--faint);font-size:1.05em}
+.step+.step{margin-top:.55em}
+.key{display:flex;gap:1.6em;font-size:.78em;color:var(--muted)}
+.key span::before{content:"";display:inline-block;width:.75em;height:.75em;border-radius:3px;margin-right:.4em;vertical-align:-.05em;background:var(--c)}
+.term h3{margin-bottom:.25em}
+.term h3::before{content:"";display:inline-block;width:.7em;height:.7em;border-radius:3px;background:var(--c);margin-right:.45em}
+.term p{font-size:.85em}
+.callout{border-radius:10px;background:var(--wash);padding:.7em .9em}
+.callout h3{margin-bottom:.25em}.callout p{font-size:.84em}
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:.8em;text-align:left}
+th{font-weight:600;color:var(--muted);font-size:.88em}
+th,td{padding:.45em .5em .45em 0;border-bottom:1px solid var(--rule);vertical-align:baseline}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.hl{color:var(--blue);font-weight:700}.or{color:var(--orange);font-weight:700}
+/* stats */
+.stat{display:flex;flex-direction:column;gap:.1em}
+.stat b{font-family:"STIX Two Text",Cambria,Georgia,serif;font-size:2.3em;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
+.stat>span{font-size:.78em;color:var(--muted)}
+.stat + .stat{margin-top:.9em}
+/* charts */
+.chart-wrap{position:relative}
+.chart-head{display:flex;flex-direction:column;align-items:flex-start;gap:.3em;margin-bottom:.4em}
+.chart-title{font-size:.8em;font-weight:600}
+.legend{display:flex;gap:1.1em;font-size:.68em;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:.4em}
+.legend svg{width:1.6em;height:.6em}
+.chart-toggle{font-size:.6em;padding:.3em .7em;min-height:0}
+svg.plot{width:100%;height:auto;display:block;overflow:visible}
+svg.plot text{font-family:Arial,Helvetica,sans-serif;fill:var(--muted)}
+.tooltip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--rule);border-radius:6px;box-shadow:0 4px 14px rgba(20,39,53,.12);
+  padding:.45em .7em;font-size:.62em;line-height:1.45;white-space:nowrap;transform:translate(-50%,-100%);opacity:0;transition:opacity .08s}
+.tooltip .t{color:var(--muted);margin-bottom:.15em}
+.tooltip .row{display:flex;align-items:center;gap:.5em}
+.tooltip .row i{display:inline-block;width:1.1em;height:0;border-top:2px solid var(--c)}
+.tooltip .row i.dash{border-top-style:dashed}
+.tooltip .row b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.data-table{max-height:calc(var(--w)*.3);overflow:auto;font-size:.9em}
+.data-table[hidden]{display:none}
+/* interactive */
+.controls3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1em}
+.controls3 label{font-size:.68em;display:block}
+.controls3 output{font-weight:700;color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--blue);margin:8px 0 2px;min-height:22px}
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--ink);padding-top:.35em;font-size:.95em}
+.total output{font-family:"STIX Two Text",Cambria,Georgia,serif;font-size:1.45em;color:var(--blue);font-variant-numeric:tabular-nums}
+.phat{font-size:.82em}.phat output{font-weight:700;color:var(--blue)}
+.notes{width:var(--w);margin:0 auto 24px;background:var(--paper);padding:26px 40px;border-top:1px solid var(--rule);font-size:18px;line-height:1.6}
+.notes[hidden]{display:none}.notes h2{font-size:21px;margin-bottom:10px}
+.notes .note-source{font-size:14px;color:var(--muted);margin-top:14px}
+a{color:var(--blue)}
+@media(max-width:760px){:root{--w:calc(100vw - 24px)}.toolbar,.controls{flex-wrap:wrap;padding:8px 0}.hint{display:none}
+  .slide{aspect-ratio:auto;min-height:calc(100dvh - 145px);padding:26px 20px;font-size:17px;gap:18px}
+  .grid2,.grid2.wide,.grid2.chart,.grid3,.controls3{grid-template-columns:1fr;gap:18px}.cover .eyebrow{position:static}.cover .roadmap{flex-wrap:wrap}
+  .eq.hero math{font-size:1.25em}.eq.big math{font-size:1.1em}}
+@media print{@page{size:A4 landscape;margin:10mm}body{background:#fff}.toolbar,.controls,.notes,.chart-toggle{display:none!important}
+  :root{--w:270mm}main{width:270mm}.slide,.slide[hidden]{display:flex!important;aspect-ratio:auto;height:184mm;width:270mm;break-after:page;padding:11mm;font-size:15pt}
+  .slide:last-child{break-after:auto}input[type=range]{display:none}}
+
+.diagram{width:100%;height:auto;display:block}
+.diagram text{font-family:Arial,Helvetica,sans-serif}
+.q{display:grid;grid-template-columns:auto 1fr;gap:.2em .8em;align-items:baseline}
+.q b{font-size:1.15em}
+.timeline{display:flex;align-items:center;gap:.5em;margin:.6em 0 .2em}
+.timeline .dot{width:.75em;height:.75em;border-radius:50%;background:var(--c);flex:none}
+.timeline .bar{height:3px;background:var(--c);flex:1}
+.timeline .bar.dash{background:repeating-linear-gradient(90deg,var(--c) 0 10px,transparent 10px 17px)}
+.timeline .end{font-weight:700;color:var(--c);font-size:1.2em;flex:none}
+.obs{border-radius:12px;background:#fff;border:1px solid var(--rule);padding:.8em 1em;display:flex;flex-direction:column;gap:.45em}
+.obs h3{font-size:1.02em}
+.obs .what{font-size:.8em;color:var(--muted)}
+.flow3{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:.6em;align-items:stretch}
+.flow3 .arrow{align-self:center;color:var(--faint);font-size:1.4em}
+.flow3 .callout{display:flex;flex-direction:column;gap:.3em}
+.flow3 .stepnum{font-family:"STIX Two Text",Georgia,serif;color:var(--blue);font-size:1.4em;line-height:1}
+.bigtable td,.bigtable th{padding:.55em .6em .55em 0}.bigtable td{white-space:nowrap}
+.defs{display:grid;grid-template-columns:1fr 1fr;gap:calc(var(--w)*.03);align-items:center}
+.defs .def{display:grid;grid-template-columns:auto 1fr;gap:.9em;align-items:center}
+.defs svg{width:7.5em;height:auto}
+.defs p{font-size:.8em}
+.explain{border-left:0;background:var(--wash);border-radius:10px;padding:.6em .8em;font-size:.76em;line-height:1.4}
+.explain b{color:var(--ink)}
+
+.counts{display:flex;flex-direction:column;gap:.45em;font-size:.82em}
+.counts .row{display:grid;grid-template-columns:4.5em 1fr 3.2em;gap:.6em;align-items:center}
+.counts .bar{height:1.1em;border-radius:0 4px 4px 0;background:var(--c)}
+.calc{font-family:"STIX Two Text",Cambria,Georgia,serif;font-size:1.15em}
+.recipe{counter-reset:r;display:flex;flex-direction:column;gap:.55em;margin:0;padding:0;list-style:none}
+.recipe li{counter-increment:r;display:grid;grid-template-columns:1.8em 1fr;gap:.6em;align-items:baseline}
+.recipe li::before{content:counter(r);font-family:"STIX Two Text",Georgia,serif;color:var(--blue);font-size:1.25em}
+</style>
+</head>
+<body>
+<header class="toolbar">
+  <span class="toolbar-title">Вероятность перехода и время до него</span>
+  <div class="toolbar-actions"><button id="notes-button" type="button" aria-expanded="false" aria-controls="speaker-notes">Заметки · N</button><button id="fullscreen-button" type="button">На весь экран · F</button></div>
+</header>
+<main id="deck" aria-label="Презентация">
+
+<section class="slide cover" data-seconds="15" aria-labelledby="t1">
+  <p class="eyebrow">Стохастическая сеть Петри · ~6 минут</p>
+  <h1 id="t1">Как считаем вероятность<br>перехода и время до него</h1>
+  <p class="subtitle">По журналу событий, с учётом цензуры · сквозной пример: состояние B</p>
+  <template class="speaker-text">Покажу, как по журналу событий мы считаем две вещи: вероятность перехода из состояния в состояние и время до этого перехода. Всё — на одном примере, состоянии B, шаг за шагом.</template>
+</section>
+
+<section class="slide" data-seconds="30" aria-labelledby="t2">
+  <p class="eyebrow">Цель</p><h2 id="t2">Что хотим получить для каждой стрелки</h2>
+  <div class="grid2 wide" style="align-items:center">
+    <svg class="diagram" viewBox="0 0 560 330" role="img" aria-label="Состояние B с выходами в A, C, D и цензурой">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#142735"/></marker>
+            <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8a98a5"/></marker></defs>
+      <circle cx="130" cy="165" r="44" fill="#fff" stroke="#142735" stroke-width="2.5"/><text x="130" y="174" text-anchor="middle" font-size="28" font-weight="700" fill="#142735">B</text>
+      <g font-size="17" fill="#142735">
+        <line x1="172" y1="148" x2="402" y2="60" stroke="#142735" stroke-width="2" marker-end="url(#ar)"/>
+        <circle cx="440" cy="50" r="30" fill="#fff" stroke="#142735" stroke-width="2"/><text x="440" y="57" text-anchor="middle" font-size="22" font-weight="700">A</text>
+        <text x="225" y="98" fill="#1f7a5c" font-weight="700">p = ?</text><text x="315" y="113" fill="#7b47b0">время = ?</text>
+        <line x1="175" y1="165" x2="402" y2="165" stroke="#142735" stroke-width="2" marker-end="url(#ar)"/>
+        <circle cx="440" cy="165" r="30" fill="#fff" stroke="#142735" stroke-width="2"/><text x="440" y="172" text-anchor="middle" font-size="22" font-weight="700">C</text>
+        <text x="200" y="155" fill="#1f7a5c" font-weight="700">p = ?</text><text x="300" y="155" fill="#7b47b0">время = ?</text>
+        <line x1="172" y1="182" x2="402" y2="270" stroke="#142735" stroke-width="2" marker-end="url(#ar)"/>
+        <circle cx="440" cy="280" r="30" fill="#fff" stroke="#142735" stroke-width="2"/><text x="440" y="287" text-anchor="middle" font-size="22" font-weight="700">D</text>
+        <text x="225" y="250" fill="#1f7a5c" font-weight="700">p = ?</text><text x="315" y="220" fill="#7b47b0">время = ?</text>
+        <line x1="120" y1="209" x2="80" y2="290" stroke="#8a98a5" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arg)"/>
+        <text x="20" y="318" fill="#56687a" font-size="15">цензура: объект пропал из наблюдения</text>
+      </g>
+    </svg>
+    <div style="display:flex;flex-direction:column;gap:1em">
+      <div class="term" style="--c:var(--choice)"><h3>Вероятность перехода p<sub>sd</sub></h3><p>С каким шансом из состояния s уходят именно в d. Для B: p<sub>BA</sub> + p<sub>BC</sub> + p<sub>BD</sub> = 1.</p></div>
+      <div class="term" style="--c:var(--time)"><h3>Время до перехода</h3><p>Не одно число, а распределение: сколько обычно ждут, какой разброс, как часто ждут очень долго.</p></div>
+      <div class="term" style="--c:var(--faint)"><h3>Сложность — цензура</h3><p>Часть объектов пропадает из наблюдения, пока ещё ждёт в B.</p></div>
+    </div>
+  </div>
+  <template class="speaker-text">Из состояния B можно уйти в A, C или D. Для каждой стрелки хотим узнать две вещи. Первая — вероятность перехода: с каким шансом из B уходят именно туда; вместе вероятности дают единицу. Вторая — время до перехода, и это не одно число, а распределение: типичное время, разброс, как часто ждут очень долго. Сложность в том, что часть объектов пропадает из наблюдения, пока ещё ждёт в B, — это цензура.</template>
+</section>
+
+<section class="slide" data-seconds="35" aria-labelledby="t3">
+  <p class="eyebrow">Шаг 1</p><h2 id="t3">Из журнала — интервалы ожидания</h2>
+  <table>
+    <thead><tr><th>Трасса</th><th>Вход в B</th><th>Следующее событие</th><th>Интервал из B</th></tr></thead>
+    <tbody>
+      <tr><td>A→B→C</td><td>день 2</td><td>C, день 5</td><td><b>B → C за 3 дня</b> · завершён</td></tr>
+      <tr><td>A→B→D</td><td>день 6</td><td>D, день 10</td><td><b>B → D за 4 дня</b> · завершён</td></tr>
+      <tr><td>A→C→B…</td><td>день 8</td><td>пропал, день 13</td><td><b>B → ? дольше 5 дней</b> · цензура</td></tr>
+    </tbody>
+  </table>
+  <div class="grid2" style="align-items:center">
+    <div class="counts">
+      <p class="small muted" style="margin-bottom:.2em">Все ожидания в B, 1000 трасс: 1173</p>
+      <div class="row"><span>B → A</span><span class="bar" style="--c:#9cb8d9;width:21.5%"></span><b>239</b></div>
+      <div class="row"><span>B → C</span><span class="bar" style="--c:#9cb8d9;width:50.8%"></span><b>564</b></div>
+      <div class="row"><span>B → D</span><span class="bar" style="--c:#9cb8d9;width:27.7%"></span><b>308</b></div>
+      <div class="row"><span>цензура</span><span class="bar" style="--c:#e2a487;width:5.6%"></span><b>62</b></div>
+    </div>
+    <p class="read" style="font-size:.85em">У завершённого интервала известны <b>куда</b> и <b>за сколько</b>. У цензурированного — только что ждали <b>дольше c</b> дней; куда ушли бы, неизвестно.</p>
+  </div>
+  <template class="speaker-text">Первый шаг — превратить журнал в интервалы ожидания: от входа в состояние до следующего события. Если следующее событие — переход, интервал завершён: знаем, куда и за сколько. Если объект пропал, интервал цензурирован: знаем только, что ждал дольше c дней. В эксперименте у состояния B 1173 ожидания: 239 закончились переходом в A, 564 — в C, 308 — в D, и 62 цензурированы.</template>
+</section>
+
+<section class="slide" data-seconds="40" aria-labelledby="t4">
+  <p class="eyebrow">Шаг 2</p><h2 id="t4">Первая догадка — только по завершённым</h2>
+  <div class="grid2">
+    <div class="callout" style="--c:var(--choice)">
+      <h3>Вероятность = доля переходов</h3>
+      <p class="calc" style="margin:.4em 0">p<sub>BD</sub> ≈ 308 / 1111 = <b>0,277</b></p>
+      <p>Сколько раз ушли в D среди всех завершённых выходов из B.</p>
+    </div>
+    <div class="callout">
+      <h3>Время = подгонка распределения</h3>
+      <p class="calc" style="margin:.4em 0">308 времён B→D → weibull → среднее <b>8,45 дня</b></p>
+      <p>Подбираем параметры распределения (shape, scale), чтобы оно лучше всего описывало наблюдённые времена.</p>
+    </div>
+  </div>
+  <div class="callout" style="background:#fbeee7">
+    <h3>Почему этого мало</h3>
+    <p>62 цензурированных ожидания выброшены. А долгие переходы чаще не успевают завершиться до потери: B→D длится ~9 дней, B→A ~2 дня. Поэтому и доля B→D, и его время получаются заниженными (истина: 0,30 и 9,0 дня).</p>
+  </div>
+  <template class="speaker-text">Самый простой способ — смотреть только на завершённые интервалы. Вероятность — доля: из 1111 завершённых выходов из B в D ушли 308, это 0,277. Время — подгоняем распределение Вейбулла к 308 наблюдённым временам, получаем среднее 8,45 дня. Это первая догадка, она же наивная оценка. Проблема: 62 цензурированных ожидания выброшены, а среди них больше долгих переходов — B→D идёт 9 дней, и объект чаще пропадает, не дождавшись его. Поэтому и вероятность, и время B→D занижены: истина 0,3 и 9 дней.</template>
+</section>
+
+<section class="slide" data-seconds="45" aria-labelledby="t5">
+  <p class="eyebrow">Шаг 3</p><h2 id="t5">Как каждое наблюдение «голосует» за p и время</h2>
+  <div class="grid2">
+    <div class="obs" style="--c:var(--blue)">
+      <h3>Завершённое: B → C за t дней</h3>
+      <div class="eq plain"><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">p</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">d</mi></mrow></msub><mo>=</mo><mstyle mathcolor="#1f7a5c"><msub><mi>p</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub></mstyle><mo>⋅</mo><mstyle mathcolor="#7b47b0"><msub><mi>f</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">(</mo><mi>t</mi><mo separator="true">;</mo><mtext> </mtext><msub><mi>θ</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">)</mo></mstyle></mrow><annotation encoding="application/x-tex">L_{\mathrm{completed}} = \cp{p_{sd}}\cdot\ct{f_{sd}(t;\,\theta_{sd})}</annotation></semantics></math></span></div>
+      <p class="read"><b>Читается:</b> шанс выбрать этот выход × насколько типично время <i>t</i> для него.</p>
+    </div>
+    <div class="obs" style="--c:var(--orange)">
+      <h3>Цензурированное: ждали дольше c</h3>
+      <div class="eq plain"><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">s</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">d</mi></mrow></msub><mo>=</mo><munder><mo>∑</mo><mi>d</mi></munder><mstyle mathcolor="#1f7a5c"><msub><mi>p</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub></mstyle><mo>⋅</mo><mstyle mathcolor="#7b47b0"><msub><mi>S</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">(</mo><mi>c</mi><mo separator="true">;</mo><mtext> </mtext><msub><mi>θ</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">)</mo></mstyle></mrow><annotation encoding="application/x-tex">L_{\mathrm{censored}} = \sum_d \cp{p_{sd}}\cdot\ct{S_{sd}(c;\,\theta_{sd})}</annotation></semantics></math></span></div>
+      <p class="read"><b>Читается:</b> по всем выходам: шанс выбрать выход × шанс, что он длится дольше <i>c</i>.</p>
+    </div>
+  </div>
+  <div class="defs">
+    <div class="def">
+      <svg viewBox="0 0 200 90" aria-hidden="true"><path d="M8,80 C30,80 35,12 60,12 C90,12 120,62 192,76" fill="none" stroke="#7b47b0" stroke-width="2.5"/><line x1="8" y1="80" x2="194" y2="80" stroke="#b9c3cb"/><line x1="72" y1="80" x2="72" y2="15" stroke="#246ed0" stroke-width="2" stroke-dasharray="4 3"/><circle cx="72" cy="15" r="4.5" fill="#246ed0"/><text x="72" y="89" font-size="11" text-anchor="middle" fill="#56687a">t</text></svg>
+      <p><b>f(t; θ)</b> — плотность: высота кривой в точке t, насколько типично такое время. Форму кривой задают параметры θ.</p>
+    </div>
+    <div class="def">
+      <svg viewBox="0 0 200 90" aria-hidden="true"><path d="M100,80 L100,48 C130,62 160,72 192,76 L192,80 Z" fill="#be5429" opacity=".3"/><path d="M8,80 C30,80 35,12 60,12 C90,12 120,62 192,76" fill="none" stroke="#7b47b0" stroke-width="2.5"/><line x1="8" y1="80" x2="194" y2="80" stroke="#b9c3cb"/><line x1="100" y1="80" x2="100" y2="40" stroke="#be5429" stroke-width="2" stroke-dasharray="4 3"/><text x="100" y="89" font-size="11" text-anchor="middle" fill="#56687a">c</text></svg>
+      <p><b>S(c; θ)</b> — функция выживания в момент c: вероятность, что переход длится дольше c дней. На графике плотности это площадь правее c.</p>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:auto;padding-top:.5em;border-top:1px solid var(--rule);align-items:center;grid-template-columns:1.45fr 1fr;gap:1.2em">
+    <div class="eq plain" style="font-size:.8em"><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>S</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">(</mo><mi>c</mi><mo separator="true">;</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><mi>P</mi><mo stretchy="false">(</mo><msub><mi>T</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo>&gt;</mo><mi>c</mi><mo stretchy="false">)</mo><mo>=</mo><mn>1</mn><mo>−</mo><msub><mi>F</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">(</mo><mi>c</mi><mo separator="true">;</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><msubsup><mo>∫</mo><mi>c</mi><mi mathvariant="normal">∞</mi></msubsup><msub><mi>f</mi><mrow><mi>s</mi><mi>d</mi></mrow></msub><mo stretchy="false">(</mo><mi>u</mi><mo separator="true">;</mo><mi>θ</mi><mo stretchy="false">)</mo><mtext> </mtext><mi>d</mi><mi>u</mi></mrow><annotation encoding="application/x-tex">S_{sd}(c;\theta) = P(T_{sd} &gt; c) = 1 - F_{sd}(c;\theta) = \int_c^{\infty} f_{sd}(u;\theta)\,du</annotation></semantics></math></span></div>
+    <p style="font-size:.8em"><b>c</b> — сколько дней объект ждал в состоянии до цензуры: <i>c</i> = момент конца наблюдения − момент входа в состояние. Пример: вошёл в B на 8-й день, пропал на 13-й → <i>c</i> = 5.</p>
+  </div>
+  <template class="speaker-text">Чтобы учесть цензуру, считаем для каждого наблюдения, насколько оно согласуется с пробными значениями вероятностей p и параметров времени θ. Для завершённого — вероятность выбрать этот выход, умноженная на высоту кривой времени в точке t. Для цензурированного выход неизвестен, поэтому складываем по всем выходам: вероятность выбора на функцию выживания S в момент c — вероятность ждать дольше c. На графике плотности это площадь правее c. Здесь c — сколько дней объект прождал в состоянии до цензуры: от входа в состояние до конца наблюдения. Цензурированное ожидание «голосует» за долгие переходы: его легче объяснить, если долгий выход выбирают чаще или он длится дольше.</template>
+</section>
+
+<section class="slide" data-seconds="40" aria-labelledby="t6">
+  <p class="eyebrow">Шаг 4</p><h2 id="t6">Подбираем p и время вместе</h2>
+  <div class="grid2 wide" style="align-items:center">
+    <ol class="recipe">
+      <li><div><b>Старт</b> — первая догадка из шага 2: p<sub>BD</sub> = 0,277, среднее 8,45 дня.</div></li>
+      <li><div><b>Оценка кандидата</b> — складываем логарифмы вкладов всех 1173 ожиданий в B:<div class="eq plain" style="font-size:.9em"><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="normal">ℓ</mi><mi>B</mi></msub><mo>=</mo><munder><mo>∑</mo><mtext>завершённые</mtext></munder><mi>log</mi><mo>⁡</mo><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">p</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">d</mi></mrow></msub><mo>+</mo><munder><mo>∑</mo><mtext>цензурированные</mtext></munder><mi>log</mi><mo>⁡</mo><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">s</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">d</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\ell_B = \sum_{\text{завершённые}}\log L_{\mathrm{completed}} + \sum_{\text{цензурированные}}\log L_{\mathrm{censored}}</annotation></semantics></math></span></div></div></li>
+      <li><div><b>Улучшение</b> — оптимизатор (L-BFGS-B) меняет все p и параметры времени выходов B <i>одновременно</i>, пока ℓ<sub>B</sub> растёт.</div></li>
+      <li><div><b>Ответ</b> — значения в точке максимума: p<sub>BD</sub> = 0,292, среднее 8,9 дня.</div></li>
+    </ol>
+    <div>
+      <svg class="diagram" viewBox="0 0 320 220" role="img" aria-label="Схема: максимум оценки сдвигается при учёте цензуры">
+        <line x1="30" y1="185" x2="305" y2="185" stroke="#b9c3cb"/><text x="305" y="205" text-anchor="end" font-size="13" fill="#56687a">p<tspan font-size="10" dy="3">BD</tspan></text>
+        <path d="M35,175 C90,40 150,30 200,95 S270,175 300,180" fill="none" stroke="#be5429" stroke-width="2.5"/>
+        <path d="M35,180 C110,60 170,22 225,70 S285,170 300,178" fill="none" stroke="#246ed0" stroke-width="2.5"/>
+        <line x1="150" y1="185" x2="150" y2="38" stroke="#be5429" stroke-dasharray="4 3"/><text x="150" y="203" text-anchor="middle" font-size="13" fill="#be5429">0,277</text>
+        <line x1="182" y1="185" x2="182" y2="30" stroke="#246ed0" stroke-dasharray="4 3"/><text x="190" y="203" text-anchor="start" font-size="13" fill="#246ed0">0,292</text>
+        <text x="40" y="22" font-size="13" fill="#56687a">ℓ<tspan font-size="10" dy="3">B</tspan><tspan dy="-3"> — насколько журнал правдоподобен</tspan></text>
+      </svg>
+      <p class="note" style="text-align:center">Схема. <span class="or">Без цензуры</span> максимум — на доле 0,277; <span class="hl">с цензурой</span> он сдвигается к истинным 0,30.</p>
+    </div>
+  </div>
+  <template class="speaker-text">Теперь p и параметры времени — неизвестные, которые мы подбираем. Стартуем с первой догадки. Для каждого кандидата складываем логарифмы вкладов всех ожиданий в B — получаем одно число: насколько журнал правдоподобен при таких значениях. Оптимизатор меняет все вероятности и параметры времени выходов B одновременно, пока это число растёт. Одновременно — потому что цензурированное ожидание можно объяснить и вероятностью, и временем. Если учитывать только завершённые, максимум ровно на доле 0,277; с цензурой он сдвигается к 0,292, ближе к истинным 0,3. Время B→D — 8,9 дня вместо 8,45.</template>
+</section>
+
+<section class="slide" data-seconds="35" aria-labelledby="t7">
+  <p class="eyebrow">Результат для B</p><h2 id="t7">Вероятности и время всех выходов из B</h2>
+  <table class="bigtable" style="font-size:.88em">
+    <thead>
+      <tr><th rowspan="2">Выход</th><th class="num" colspan="3" style="text-align:center;color:var(--choice)">Вероятность перехода p</th><th class="num" colspan="3" style="text-align:center;color:var(--time)">Среднее время до перехода, дни</th></tr>
+      <tr><th class="num">Истина</th><th class="num">По заверш.</th><th class="num">Совместно</th><th class="num">Истина</th><th class="num">По заверш.</th><th class="num">Совместно</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>B→A</td><td class="num">0,20</td><td class="num or">0,215</td><td class="num hl">0,209</td><td class="num">2,0</td><td class="num or">2,0</td><td class="num hl">2,0</td></tr>
+      <tr><td>B→C</td><td class="num">0,50</td><td class="num or">0,508</td><td class="num hl">0,499</td><td class="num">3,0</td><td class="num or">2,95</td><td class="num hl">3,0</td></tr>
+      <tr><td><b>B→D</b></td><td class="num"><b>0,30</b></td><td class="num or">0,277</td><td class="num hl">0,292</td><td class="num"><b>9,0</b></td><td class="num or">8,45</td><td class="num hl">8,9</td></tr>
+    </tbody>
+  </table>
+  <p class="takeaway">Больше всего цензура влияет на <b>самый долгий выход</b> B→D: по завершённым и его вероятность, и время занижены; совместная оценка их исправляет.</p>
+  <template class="speaker-text">Итог для состояния B. Слева вероятности перехода, справа среднее время. Короткие переходы в A и C почти не страдают от цензуры, все оценки близки к истине. Самый долгий, B→D, по завершённым занижен и по вероятности — 0,277 вместо 0,3, — и по времени — 8,45 вместо 9. Совместная оценка даёт 0,292 и 8,9.</template>
+</section>
+
+<section class="slide" data-seconds="35" aria-labelledby="t8">
+  <p class="eyebrow">Время до перехода</p><h2 id="t8">Из распределения — любые характеристики времени</h2>
+  <div class="grid2 chart">
+    <div class="chart-wrap" id="chart-bd"></div>
+    <div style="display:flex;flex-direction:column;gap:.6em">
+      <div class="explain">Оценка времени — это параметры распределения: для B→D weibull(shape = 1,43, scale = 9,79). Из них считаем всё остальное.</div>
+      <table style="font-size:.78em">
+        <thead><tr><th>B→D</th><th class="num">Истина</th><th class="num">Совм.</th><th class="num">По заверш.</th></tr></thead>
+        <tbody>
+          <tr><td>Среднее, дни</td><td class="num">9,0</td><td class="num hl">8,9</td><td class="num or">8,45</td></tr>
+          <tr><td>Медиана, дни</td><td class="num">7,8</td><td class="num hl">7,6</td><td class="num or">7,1</td></tr>
+          <tr><td><tr><td>&gt; 15 дней</td><td class="num">16%</td>gt; 15 дней</td><td class="num">16%</td><td class="num hl">16%</td><td class="num or">14%</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Среднее для weibull = scale · Γ(1 + 1/shape). Кривая слева — S(t), доля ожиданий дольше t.</p>
+    </div>
+  </div>
+  <template class="speaker-text">Что значит «оценили время»? Мы получили параметры распределения — для B→D это Вейбулл с формой 1,43 и масштабом 9,8. Из них считаем любые характеристики: среднее — по формуле, медиану, долю ожиданий дольше 15 дней. Кривая — доля ожиданий, которые длятся дольше t. Пунктир — истина, синяя — совместная оценка почти совпадает с ней, оранжевая — оценка по завершённым — ниже: долгие ожидания недооценены.</template>
+</section>
+
+<section class="slide" data-seconds="35" aria-labelledby="t9">
+  <p class="eyebrow">Проверка на всех переходах</p><h2 id="t9">Чем больше данных, тем точнее совместная оценка</h2>
+  <div class="grid2 chart">
+    <div class="chart-wrap" id="chart-n"></div>
+    <div style="display:flex;flex-direction:column;gap:.7em">
+      <div class="explain"><b>Как считаем ошибку.</b> Для каждого из 12 параметров времени всех 7 переходов: |оценка − истина| / истина, затем среднее. Для каждого числа трасс — 5 журналов.</div>
+      <div>
+        <p class="small muted">3000 трасс: совместно vs по завершённым</p>
+        <div class="stat" style="margin-top:.3em"><b><span class="hl">1,6%</span> <span class="muted" style="font-size:.45em">vs</span> <span class="or">4,0%</span></b><span>ошибка параметров времени</span></div>
+        <div class="stat" style="margin-top:.5em"><b><span class="hl">0,6</span> <span class="muted" style="font-size:.45em">vs</span> <span class="or">1,5</span></b><span>ошибка вероятностей p, проц. пункты</span></div>
+      </div>
+    </div>
+  </div>
+  <template class="speaker-text">Чтобы проверить метод не на одном примере, генерируем журналы от 30 до 3000 трасс и сравниваем оценки с истиной по всем семи переходам. Оценка по завершённым останавливается на ошибке около 4%: больше данных её не исправляет, это смещение из-за выброшенной цензуры. Совместная оценка продолжает уточняться — 1,6% при 3000 трассах; ошибка вероятностей — 0,6 против 1,5 процентного пункта. До сотни трасс выигрыша нет.</template>
+</section>
+
+<section class="slide" data-seconds="20" aria-labelledby="t10">
+  <p class="eyebrow">Итог</p><h2 id="t10">Как считаем вероятность перехода и время до него</h2>
+  <ol class="recipe" style="font-size:1.02em">
+    <li><div><b>Журнал → интервалы ожидания:</b> завершённые (куда и за сколько) и цензурированные (ждали дольше c).</div></li>
+    <li><div><b>Первая догадка:</b> вероятность — доля переходов, время — распределение по завершённым.</div></li>
+    <li><div><b>Каждое наблюдение оценивает кандидата:</b> p·f(t; θ) для завершённых, Σ p·S(c; θ) для цензурированных.</div></li>
+    <li><div><b>Оптимизатор подбирает p и θ вместе</b> — получаем вероятность перехода и распределение времени до него.</div></li>
+  </ol>
+  <p class="takeaway small muted">Допущения: семейства распределений известны, цензура не зависит от времени перехода. Код: make_intervals, source_nll, fit_source в <a href="../notebooks/petri_net_time_estimation.ipynb">petri_net_time_estimation.ipynb</a>.</p>
+  <template class="speaker-text">Итого, четыре шага. Журнал превращаем в интервалы. Первая догадка — доли переходов и распределения по завершённым. Затем каждое наблюдение, включая цензурированные, оценивает кандидата. Оптимизатор подбирает вероятности и параметры времени вместе — на выходе вероятность каждого перехода и распределение времени до него.</template>
+</section>
+
+</main>
+<footer class="controls">
+  <div class="controls-left"><button id="previous" type="button" aria-label="Предыдущий слайд">←</button><span id="slide-status" aria-live="polite"></span><button id="next" type="button" aria-label="Следующий слайд">→</button></div>
+  <span class="hint">← → или пробел · N — заметки · F — полный экран</span>
+  <span id="timing"></span>
+</footer>
+<aside class="notes" id="speaker-notes" hidden aria-label="Заметки докладчика"><h2 id="notes-title"></h2><p id="notes-text"></p><p class="note-source">Числа — из ноутбука petri_net_time_estimation.ipynb и CSV в notebooks/output/time_estimation.</p></aside>
+<script>
+const DATA = {"cd": {"t": [0.0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.71, 3.01, 3.31, 3.61, 3.91, 4.21, 4.51, 4.81, 5.11, 5.41, 5.71, 6.01, 6.31, 6.61, 6.91, 7.21, 7.51, 7.81, 8.12, 8.42, 8.72, 9.02, 9.32, 9.62, 9.92, 10.22, 10.52, 10.82, 11.12, 11.42, 11.72, 12.02, 12.32, 12.62, 12.92, 13.23, 13.53, 13.83, 14.13, 14.43, 14.73, 15.03, 15.33, 15.63, 15.93, 16.23, 16.53, 16.83, 17.13, 17.43, 17.73, 18.03, 18.33, 18.64, 18.94, 19.24, 19.54, 19.84, 20.14, 20.44, 20.74, 21.04, 21.34, 21.64, 21.94, 22.24, 22.54, 22.84, 23.14, 23.44, 23.74, 24.05, 24.35, 24.65, 24.95, 25.25, 25.55, 25.85, 26.15, 26.45, 26.75, 27.05, 27.35, 27.65, 27.95, 28.25, 28.55, 28.85, 29.16, 29.46, 29.76], "truth": [1.0, 0.9129, 0.8532, 0.8029, 0.7585, 0.7187, 0.6823, 0.6489, 0.6181, 0.5894, 0.5626, 0.5375, 0.514, 0.4919, 0.471, 0.4513, 0.4327, 0.415, 0.3983, 0.3824, 0.3673, 0.353, 0.3393, 0.3263, 0.3139, 0.302, 0.2907, 0.2799, 0.2696, 0.2597, 0.2503, 0.2412, 0.2325, 0.2242, 0.2163, 0.2087, 0.2013, 0.1943, 0.1876, 0.1811, 0.1749, 0.1689, 0.1631, 0.1576, 0.1523, 0.1472, 0.1423, 0.1375, 0.133, 0.1286, 0.1244, 0.1203, 0.1164, 0.1126, 0.1089, 0.1054, 0.102, 0.0988, 0.0956, 0.0926, 0.0896, 0.0868, 0.0841, 0.0814, 0.0789, 0.0764, 0.0741, 0.0718, 0.0695, 0.0674, 0.0653, 0.0633, 0.0614, 0.0595, 0.0577, 0.056, 0.0543, 0.0526, 0.051, 0.0495, 0.048, 0.0466, 0.0452, 0.0439, 0.0426, 0.0413, 0.0401, 0.0389, 0.0378, 0.0367, 0.0356, 0.0345, 0.0335, 0.0326, 0.0316, 0.0307, 0.0298, 0.029, 0.0281, 0.0273], "naive": [1.0, 0.9075, 0.8416, 0.7855, 0.736, 0.6916, 0.6511, 0.6141, 0.5801, 0.5485, 0.5193, 0.492, 0.4666, 0.4428, 0.4205, 0.3996, 0.38, 0.3615, 0.344, 0.3276, 0.3121, 0.2974, 0.2836, 0.2705, 0.2581, 0.2463, 0.2352, 0.2246, 0.2145, 0.205, 0.196, 0.1873, 0.1792, 0.1714, 0.164, 0.1569, 0.1502, 0.1438, 0.1377, 0.1319, 0.1263, 0.121, 0.116, 0.1111, 0.1065, 0.1021, 0.098, 0.0939, 0.0901, 0.0864, 0.0829, 0.0796, 0.0764, 0.0733, 0.0704, 0.0676, 0.0649, 0.0623, 0.0599, 0.0575, 0.0552, 0.0531, 0.051, 0.049, 0.0471, 0.0453, 0.0435, 0.0419, 0.0402, 0.0387, 0.0372, 0.0358, 0.0344, 0.0331, 0.0319, 0.0307, 0.0295, 0.0284, 0.0273, 0.0263, 0.0253, 0.0244, 0.0235, 0.0226, 0.0217, 0.0209, 0.0202, 0.0194, 0.0187, 0.018, 0.0174, 0.0167, 0.0161, 0.0155, 0.015, 0.0144, 0.0139, 0.0134, 0.0129, 0.0124], "aware": [1.0, 0.9118, 0.8525, 0.8028, 0.7592, 0.72, 0.6843, 0.6516, 0.6213, 0.5932, 0.567, 0.5424, 0.5194, 0.4977, 0.4772, 0.4579, 0.4396, 0.4222, 0.4058, 0.3902, 0.3753, 0.3612, 0.3477, 0.3348, 0.3225, 0.3108, 0.2996, 0.2889, 0.2787, 0.2689, 0.2595, 0.2505, 0.2418, 0.2335, 0.2256, 0.218, 0.2106, 0.2036, 0.1968, 0.1903, 0.184, 0.178, 0.1722, 0.1666, 0.1613, 0.1561, 0.1511, 0.1463, 0.1417, 0.1372, 0.1329, 0.1287, 0.1247, 0.1209, 0.1171, 0.1135, 0.1101, 0.1067, 0.1035, 0.1003, 0.0973, 0.0944, 0.0915, 0.0888, 0.0861, 0.0836, 0.0811, 0.0787, 0.0764, 0.0742, 0.072, 0.0699, 0.0679, 0.0659, 0.064, 0.0621, 0.0604, 0.0586, 0.057, 0.0553, 0.0538, 0.0522, 0.0508, 0.0493, 0.0479, 0.0466, 0.0453, 0.044, 0.0428, 0.0416, 0.0404, 0.0393, 0.0382, 0.0372, 0.0362, 0.0352, 0.0342, 0.0333, 0.0324, 0.0315]}, "td": {"t": [0.0, 0.23, 0.45, 0.68, 0.9, 1.13, 1.35, 1.58, 1.8, 2.03, 2.26, 2.48, 2.71, 2.93, 3.16, 3.38, 3.61, 3.83, 4.06, 4.29, 4.51, 4.74, 4.96, 5.19, 5.41, 5.64, 5.86, 6.09, 6.32, 6.54, 6.77, 6.99, 7.22, 7.44, 7.67, 7.89, 8.12, 8.35, 8.57, 8.8, 9.02, 9.25, 9.47, 9.7, 9.92, 10.15, 10.38, 10.6, 10.83, 11.05, 11.28, 11.5, 11.73, 11.95, 12.18, 12.41, 12.63, 12.86, 13.08, 13.31, 13.53, 13.76, 13.98, 14.21, 14.44, 14.66, 14.89, 15.11, 15.34, 15.56, 15.79, 16.02, 16.24, 16.47, 16.69, 16.92, 17.14, 17.37, 17.59, 17.82, 18.05, 18.27, 18.5, 18.72, 18.95, 19.17, 19.4, 19.62, 19.85, 20.08, 20.3, 20.53, 20.75, 20.98, 21.2, 21.43, 21.65, 21.88, 22.11, 22.33, 22.56, 22.78, 23.01, 23.23, 23.46, 23.68, 23.91, 24.14, 24.36, 24.59, 24.81, 25.04, 25.26, 25.49, 25.71, 25.94, 26.17, 26.39, 26.62, 26.84, 27.07, 27.29, 27.52, 27.74, 27.97, 28.2, 28.42, 28.65, 28.87, 29.1, 29.32, 29.55, 29.77, 30.0, 30.23, 30.45, 30.68, 30.9, 31.13, 31.35, 31.58, 31.8, 32.03, 32.26, 32.48, 32.71, 32.93, 33.16, 33.38, 33.61, 33.83, 34.06, 34.29, 34.51, 34.74, 34.96, 35.19, 35.41, 35.64, 35.86, 36.09, 36.32, 36.54, 36.77, 36.99, 37.22, 37.44, 37.67, 37.89, 38.12, 38.35, 38.57, 38.8, 39.02, 39.25, 39.47, 39.7, 39.92, 40.15, 40.38, 40.6, 40.83, 41.05, 41.28, 41.5, 41.73, 41.95, 42.18, 42.41, 42.63, 42.86, 43.08, 43.31, 43.53, 43.76, 43.98, 44.21, 44.44, 44.66, 44.89, 45.11, 45.34, 45.56, 45.79, 46.02, 46.24, 46.47, 46.69, 46.92, 47.14, 47.37, 47.59, 47.82, 48.05, 48.27, 48.5, 48.72, 48.95, 49.17, 49.4, 49.62, 49.85, 50.08, 50.3, 50.53, 50.75, 50.98, 51.2, 51.43, 51.65, 51.88, 52.11, 52.33, 52.56, 52.78, 53.01, 53.23, 53.46, 53.68, 53.91, 54.14, 54.36, 54.59, 54.81, 55.04, 55.26, 55.49, 55.71, 55.94, 56.17, 56.39, 56.62, 56.84, 57.07, 57.29, 57.52, 57.74, 57.97, 58.2, 58.42, 58.65, 58.87, 59.1, 59.32, 59.55, 59.77, 60.0], "truth": [1.0, 1.0, 0.9999, 0.9994, 0.9988, 0.998, 0.9973, 0.9956, 0.9928, 0.9901, 0.986, 0.9822, 0.9774, 0.9723, 0.9665, 0.9608, 0.9539, 0.9452, 0.9369, 0.9292, 0.9188, 0.9104, 0.9005, 0.8898, 0.8801, 0.8695, 0.859, 0.8467, 0.8359, 0.8237, 0.8131, 0.8015, 0.7875, 0.7751, 0.7631, 0.7524, 0.7411, 0.7276, 0.7158, 0.7042, 0.6905, 0.6796, 0.6688, 0.6563, 0.6436, 0.6325, 0.6209, 0.6101, 0.5999, 0.5877, 0.5783, 0.5701, 0.5592, 0.5462, 0.5345, 0.5248, 0.5132, 0.504, 0.4943, 0.4847, 0.4749, 0.4663, 0.4575, 0.448, 0.4387, 0.4311, 0.422, 0.4134, 0.4046, 0.3941, 0.3842, 0.3746, 0.3669, 0.3595, 0.3519, 0.3439, 0.3357, 0.3276, 0.3221, 0.3158, 0.3082, 0.3022, 0.2942, 0.2882, 0.2817, 0.2755, 0.2686, 0.2622, 0.2558, 0.2496, 0.2447, 0.238, 0.233, 0.228, 0.2244, 0.2196, 0.2143, 0.2093, 0.204, 0.199, 0.1954, 0.19, 0.185, 0.1806, 0.1751, 0.172, 0.1678, 0.1639, 0.1609, 0.1565, 0.1535, 0.1491, 0.1457, 0.1428, 0.1397, 0.1365, 0.1323, 0.1291, 0.1257, 0.1228, 0.1194, 0.1159, 0.1129, 0.1102, 0.107, 0.1047, 0.1021, 0.0992, 0.0969, 0.0948, 0.0925, 0.0906, 0.0883, 0.0855, 0.0839, 0.0817, 0.0805, 0.078, 0.0761, 0.0744, 0.0728, 0.0718, 0.0698, 0.0686, 0.0672, 0.0659, 0.0644, 0.0625, 0.0611, 0.0593, 0.0581, 0.0571, 0.0557, 0.054, 0.0527, 0.0513, 0.0491, 0.048, 0.0465, 0.0455, 0.0447, 0.0433, 0.042, 0.04, 0.0396, 0.0385, 0.0378, 0.0365, 0.0357, 0.0346, 0.0336, 0.033, 0.0325, 0.0318, 0.0311, 0.0307, 0.0299, 0.0292, 0.0284, 0.0278, 0.0267, 0.026, 0.0256, 0.025, 0.0246, 0.0242, 0.0232, 0.022, 0.0215, 0.021, 0.0208, 0.0202, 0.0199, 0.0193, 0.0191, 0.0186, 0.0183, 0.018, 0.0176, 0.0172, 0.0169, 0.0166, 0.0163, 0.0158, 0.0153, 0.0147, 0.0142, 0.0137, 0.0132, 0.0128, 0.0126, 0.0126, 0.0125, 0.0122, 0.0121, 0.012, 0.0116, 0.0109, 0.0107, 0.0102, 0.01, 0.0095, 0.0092, 0.0091, 0.0089, 0.0089, 0.0086, 0.0084, 0.0082, 0.0081, 0.0078, 0.0077, 0.0076, 0.0074, 0.0071, 0.0069, 0.0068, 0.0067, 0.0066, 0.0063, 0.0061, 0.0058, 0.0057, 0.0054, 0.0053, 0.0052, 0.0052, 0.0051, 0.005, 0.0048, 0.0048, 0.0047, 0.0046, 0.0044, 0.0044, 0.0042, 0.0042, 0.004, 0.0039, 0.0037, 0.0037, 0.0037, 0.0036, 0.0034, 0.0033, 0.0032, 0.0032], "naive": [1.0, 1.0, 0.9999, 0.9993, 0.9986, 0.9976, 0.9958, 0.9942, 0.9901, 0.9871, 0.9835, 0.9794, 0.9732, 0.9665, 0.9585, 0.951, 0.9445, 0.9363, 0.9259, 0.9179, 0.9065, 0.8961, 0.8869, 0.8751, 0.8648, 0.8524, 0.841, 0.8295, 0.8177, 0.8047, 0.7936, 0.7808, 0.7674, 0.754, 0.7393, 0.7267, 0.7139, 0.7014, 0.6893, 0.6741, 0.6619, 0.6464, 0.6338, 0.6218, 0.6071, 0.595, 0.5827, 0.5709, 0.557, 0.5454, 0.5329, 0.5217, 0.5116, 0.5008, 0.4898, 0.4786, 0.4672, 0.4575, 0.4474, 0.4372, 0.4265, 0.4157, 0.4067, 0.3969, 0.3875, 0.3787, 0.3708, 0.3621, 0.3548, 0.3457, 0.3387, 0.3297, 0.3221, 0.3142, 0.3076, 0.2997, 0.2958, 0.2882, 0.2803, 0.2739, 0.2677, 0.2627, 0.2541, 0.2458, 0.2397, 0.2332, 0.2265, 0.22, 0.2149, 0.2085, 0.2026, 0.1977, 0.1932, 0.189, 0.1838, 0.1793, 0.1742, 0.1698, 0.1654, 0.1607, 0.1562, 0.1517, 0.1475, 0.1444, 0.141, 0.137, 0.1334, 0.1296, 0.1254, 0.1221, 0.1191, 0.1162, 0.1126, 0.1093, 0.1064, 0.1041, 0.1014, 0.0985, 0.0958, 0.0933, 0.0908, 0.0881, 0.0854, 0.0822, 0.0801, 0.0782, 0.0758, 0.0737, 0.0718, 0.0697, 0.068, 0.0664, 0.064, 0.0612, 0.0597, 0.0571, 0.0556, 0.0543, 0.0529, 0.0518, 0.0505, 0.0489, 0.0477, 0.0461, 0.0448, 0.0432, 0.0416, 0.0408, 0.0398, 0.0385, 0.0372, 0.0362, 0.0343, 0.0331, 0.0318, 0.031, 0.0304, 0.0298, 0.0292, 0.0283, 0.0277, 0.027, 0.0266, 0.0258, 0.0251, 0.0243, 0.0235, 0.0228, 0.0218, 0.0209, 0.0201, 0.0195, 0.0188, 0.018, 0.0177, 0.0175, 0.0171, 0.0169, 0.0166, 0.0162, 0.0158, 0.0153, 0.0148, 0.0144, 0.0142, 0.0142, 0.0138, 0.0135, 0.0131, 0.0129, 0.0125, 0.0124, 0.0121, 0.0119, 0.0113, 0.0111, 0.0106, 0.0103, 0.0103, 0.0099, 0.0098, 0.0096, 0.0095, 0.0092, 0.0088, 0.0083, 0.008, 0.0078, 0.0078, 0.0073, 0.0072, 0.0069, 0.0068, 0.0067, 0.0066, 0.0063, 0.0062, 0.0056, 0.0055, 0.0054, 0.0054, 0.0054, 0.0053, 0.0053, 0.0049, 0.0048, 0.0046, 0.0044, 0.0041, 0.0041, 0.0041, 0.0039, 0.0037, 0.0036, 0.0035, 0.0033, 0.003, 0.0029, 0.0027, 0.0027, 0.0027, 0.0027, 0.0026, 0.0024, 0.0024, 0.0023, 0.0023, 0.0023, 0.0022, 0.0022, 0.0021, 0.0021, 0.0021, 0.002, 0.002, 0.0018, 0.0016, 0.0016, 0.0016, 0.0015, 0.0014, 0.0014, 0.0014, 0.0014, 0.0014, 0.0014, 0.0014], "aware": [1.0, 1.0, 1.0, 0.9992, 0.999, 0.9982, 0.9961, 0.9947, 0.9927, 0.9896, 0.9864, 0.9816, 0.9755, 0.9704, 0.9644, 0.957, 0.9486, 0.9417, 0.9344, 0.9258, 0.9171, 0.9082, 0.8975, 0.8865, 0.875, 0.8627, 0.851, 0.8404, 0.8289, 0.8166, 0.8059, 0.794, 0.7814, 0.7692, 0.7567, 0.7453, 0.73, 0.7175, 0.7032, 0.6908, 0.6803, 0.6679, 0.6569, 0.645, 0.63, 0.6171, 0.6065, 0.5928, 0.582, 0.5705, 0.5598, 0.5479, 0.538, 0.5275, 0.5166, 0.5077, 0.4965, 0.4875, 0.4782, 0.4685, 0.4591, 0.4507, 0.4411, 0.433, 0.4235, 0.4146, 0.4071, 0.3983, 0.3909, 0.3832, 0.3739, 0.3655, 0.3587, 0.3505, 0.3422, 0.3347, 0.3261, 0.3187, 0.3115, 0.3055, 0.2973, 0.2902, 0.2834, 0.2786, 0.2742, 0.2691, 0.2618, 0.2563, 0.2508, 0.245, 0.2392, 0.234, 0.2286, 0.2226, 0.2168, 0.2112, 0.2069, 0.2029, 0.1984, 0.1935, 0.1892, 0.184, 0.1798, 0.1759, 0.1718, 0.167, 0.1628, 0.1593, 0.1559, 0.152, 0.1468, 0.1428, 0.1397, 0.1373, 0.1349, 0.1325, 0.1294, 0.1258, 0.1241, 0.1209, 0.1181, 0.1158, 0.1135, 0.1118, 0.1089, 0.1073, 0.1054, 0.103, 0.1013, 0.0994, 0.0976, 0.0946, 0.0921, 0.0892, 0.0874, 0.0847, 0.0826, 0.0815, 0.0796, 0.0769, 0.0756, 0.0739, 0.0719, 0.0703, 0.0693, 0.0676, 0.0664, 0.065, 0.0637, 0.0618, 0.0604, 0.0592, 0.0579, 0.0568, 0.0555, 0.0542, 0.053, 0.0511, 0.0503, 0.0494, 0.0488, 0.0473, 0.0469, 0.0458, 0.0447, 0.0435, 0.0426, 0.0412, 0.0401, 0.0394, 0.0383, 0.0372, 0.037, 0.0359, 0.0346, 0.0335, 0.033, 0.0323, 0.0318, 0.0309, 0.0303, 0.0295, 0.0286, 0.0277, 0.0272, 0.0268, 0.0262, 0.0257, 0.0253, 0.025, 0.0243, 0.0236, 0.0231, 0.0228, 0.0222, 0.0214, 0.0206, 0.0203, 0.02, 0.0194, 0.0189, 0.0185, 0.0182, 0.0176, 0.0173, 0.017, 0.0164, 0.0159, 0.0152, 0.0148, 0.0147, 0.0143, 0.0142, 0.014, 0.0136, 0.0131, 0.0129, 0.0129, 0.0127, 0.0126, 0.0122, 0.0119, 0.0118, 0.0116, 0.0115, 0.0114, 0.0114, 0.0113, 0.0112, 0.011, 0.0109, 0.0108, 0.0107, 0.0105, 0.0103, 0.01, 0.01, 0.0096, 0.0095, 0.0094, 0.0091, 0.009, 0.0087, 0.0086, 0.0083, 0.0079, 0.0078, 0.0073, 0.0073, 0.0072, 0.0072, 0.0072, 0.0072, 0.0069, 0.0067, 0.0067, 0.0064, 0.0063, 0.0061, 0.0061, 0.0061, 0.006, 0.0058, 0.0058, 0.0057, 0.0056, 0.0056]}, "tdstats": {"truth": {"mean": 15.33, "median": 12.93}, "naive": {"mean": 14.09, "median": 11.98}, "aware": {"mean": 15.27, "median": 12.56}}, "q": {"censor_aware": {"n": [30, 50, 100, 300, 1000, 3000], "mean": [23.28, 18.32, 10.62, 6.92, 2.87, 1.56], "p10": [15.77, 13.42, 8.2, 5.4, 2.24, 1.25], "p90": [30.86, 21.51, 12.6, 8.9, 3.55, 1.81], "count": [5, 5, 5, 5, 5, 5], "cdf": [7.33, 4.95, 3.23, 2.27, 0.97, 0.53], "pmae": [8.34, 5.87, 2.67, 1.96, 0.96, 0.63]}, "naive": {"n": [30, 50, 100, 300, 1000, 3000], "mean": [20.0, 15.74, 10.11, 8.01, 4.76, 3.97], "p10": [14.34, 11.26, 8.3, 7.21, 4.33, 3.6], "p90": [26.32, 19.18, 12.26, 9.14, 5.42, 4.27], "count": [5, 5, 5, 5, 5, 5], "cdf": [6.99, 4.59, 3.2, 2.98, 1.82, 1.6], "pmae": [8.74, 6.33, 3.23, 2.01, 1.4, 1.52]}}, "bias": {"B→A": {"p": 0.2, "pcomp": 0.9673, "share": 0.2083}, "B→C": {"p": 0.5, "pcomp": 0.9518, "share": 0.5124}, "B→D": {"p": 0.3, "pcomp": 0.8647, "share": 0.2793}}, "bd": {"t": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.81, 2.01, 2.21, 2.41, 2.61, 2.81, 3.01, 3.21, 3.41, 3.61, 3.81, 4.01, 4.21, 4.41, 4.61, 4.81, 5.02, 5.22, 5.42, 5.62, 5.82, 6.02, 6.22, 6.42, 6.62, 6.82, 7.02, 7.22, 7.42, 7.62, 7.82, 8.02, 8.23, 8.43, 8.63, 8.83, 9.03, 9.23, 9.43, 9.63, 9.83, 10.03, 10.23, 10.43, 10.63, 10.83, 11.03, 11.23, 11.44, 11.64, 11.84, 12.04, 12.24, 12.44, 12.64, 12.84, 13.04, 13.24, 13.44, 13.64, 13.84, 14.04, 14.24, 14.44, 14.65, 14.85, 15.05, 15.25, 15.45, 15.65, 15.85, 16.05, 16.25, 16.45, 16.65, 16.85, 17.05, 17.25, 17.45, 17.65, 17.86, 18.06, 18.26, 18.46, 18.66, 18.86, 19.06, 19.26, 19.46, 19.66, 19.86, 20.06, 20.26, 20.46, 20.66, 20.86, 21.07, 21.27, 21.47, 21.67, 21.87, 22.07, 22.27, 22.47, 22.67, 22.87, 23.07, 23.27, 23.47, 23.67, 23.87, 24.07, 24.28, 24.48, 24.68, 24.88, 25.08, 25.28, 25.48, 25.68, 25.88, 26.08, 26.28, 26.48, 26.68, 26.88, 27.08, 27.28, 27.48, 27.69, 27.89, 28.09, 28.29, 28.49, 28.69, 28.89, 29.09, 29.29, 29.49, 29.69, 29.89], "truth": [1.0, 0.9972, 0.992, 0.9853, 0.9775, 0.9687, 0.9591, 0.9487, 0.9377, 0.9261, 0.9141, 0.9015, 0.8886, 0.8753, 0.8617, 0.8478, 0.8337, 0.8194, 0.8049, 0.7903, 0.7756, 0.7607, 0.7459, 0.7309, 0.716, 0.701, 0.6861, 0.6712, 0.6564, 0.6416, 0.6269, 0.6123, 0.5979, 0.5835, 0.5693, 0.5552, 0.5413, 0.5275, 0.5139, 0.5005, 0.4873, 0.4743, 0.4614, 0.4488, 0.4363, 0.4241, 0.4121, 0.4003, 0.3887, 0.3773, 0.3662, 0.3552, 0.3445, 0.3341, 0.3238, 0.3138, 0.304, 0.2944, 0.285, 0.2759, 0.267, 0.2583, 0.2498, 0.2415, 0.2334, 0.2256, 0.2179, 0.2105, 0.2032, 0.1962, 0.1893, 0.1827, 0.1762, 0.1699, 0.1638, 0.1579, 0.1522, 0.1466, 0.1412, 0.136, 0.1309, 0.126, 0.1212, 0.1166, 0.1122, 0.1079, 0.1037, 0.0997, 0.0958, 0.092, 0.0884, 0.0849, 0.0815, 0.0782, 0.075, 0.072, 0.0691, 0.0662, 0.0635, 0.0609, 0.0583, 0.0559, 0.0535, 0.0513, 0.0491, 0.047, 0.045, 0.0431, 0.0412, 0.0394, 0.0377, 0.036, 0.0345, 0.0329, 0.0315, 0.0301, 0.0287, 0.0274, 0.0262, 0.025, 0.0239, 0.0228, 0.0217, 0.0207, 0.0198, 0.0189, 0.018, 0.0171, 0.0163, 0.0156, 0.0148, 0.0141, 0.0134, 0.0128, 0.0122, 0.0116, 0.011, 0.0105, 0.01, 0.0095, 0.009, 0.0086, 0.0082, 0.0078, 0.0074, 0.007, 0.0067, 0.0063, 0.006, 0.0057], "naive": [1.0, 0.9954, 0.9879, 0.9787, 0.9683, 0.9568, 0.9446, 0.9317, 0.9182, 0.9042, 0.8899, 0.8751, 0.8601, 0.8448, 0.8293, 0.8137, 0.798, 0.7821, 0.7662, 0.7503, 0.7344, 0.7185, 0.7026, 0.6869, 0.6712, 0.6556, 0.6401, 0.6248, 0.6095, 0.5945, 0.5796, 0.5649, 0.5504, 0.5361, 0.522, 0.5081, 0.4944, 0.4809, 0.4677, 0.4547, 0.4419, 0.4294, 0.4171, 0.405, 0.3932, 0.3816, 0.3702, 0.3591, 0.3483, 0.3377, 0.3273, 0.3171, 0.3072, 0.2976, 0.2881, 0.2789, 0.2699, 0.2612, 0.2527, 0.2444, 0.2363, 0.2284, 0.2208, 0.2133, 0.2061, 0.1991, 0.1922, 0.1856, 0.1791, 0.1729, 0.1668, 0.1609, 0.1552, 0.1496, 0.1442, 0.139, 0.134, 0.1291, 0.1243, 0.1197, 0.1153, 0.111, 0.1068, 0.1028, 0.0989, 0.0952, 0.0915, 0.088, 0.0846, 0.0814, 0.0782, 0.0751, 0.0722, 0.0693, 0.0666, 0.064, 0.0614, 0.0589, 0.0566, 0.0543, 0.0521, 0.05, 0.0479, 0.046, 0.0441, 0.0423, 0.0405, 0.0388, 0.0372, 0.0356, 0.0341, 0.0327, 0.0313, 0.03, 0.0287, 0.0275, 0.0263, 0.0251, 0.0241, 0.023, 0.022, 0.021, 0.0201, 0.0192, 0.0184, 0.0176, 0.0168, 0.016, 0.0153, 0.0146, 0.014, 0.0134, 0.0127, 0.0122, 0.0116, 0.0111, 0.0106, 0.0101, 0.0096, 0.0092, 0.0088, 0.0083, 0.008, 0.0076, 0.0072, 0.0069, 0.0066, 0.0063, 0.006, 0.0057], "aware": [1.0, 0.9961, 0.9895, 0.9814, 0.9722, 0.9619, 0.9509, 0.9392, 0.9269, 0.9141, 0.9009, 0.8873, 0.8734, 0.8593, 0.8449, 0.8303, 0.8155, 0.8006, 0.7857, 0.7706, 0.7555, 0.7404, 0.7253, 0.7102, 0.6952, 0.6802, 0.6653, 0.6505, 0.6357, 0.6211, 0.6067, 0.5923, 0.5781, 0.5641, 0.5502, 0.5365, 0.523, 0.5097, 0.4965, 0.4836, 0.4708, 0.4583, 0.4459, 0.4338, 0.4219, 0.4102, 0.3988, 0.3875, 0.3765, 0.3656, 0.355, 0.3447, 0.3345, 0.3246, 0.3149, 0.3054, 0.2961, 0.287, 0.2782, 0.2695, 0.2611, 0.2528, 0.2448, 0.237, 0.2294, 0.2219, 0.2147, 0.2077, 0.2008, 0.1941, 0.1877, 0.1814, 0.1752, 0.1693, 0.1635, 0.1579, 0.1524, 0.1471, 0.1419, 0.137, 0.1321, 0.1274, 0.1229, 0.1185, 0.1142, 0.11, 0.106, 0.1022, 0.0984, 0.0948, 0.0912, 0.0878, 0.0845, 0.0814, 0.0783, 0.0753, 0.0724, 0.0697, 0.067, 0.0644, 0.0619, 0.0595, 0.0571, 0.0549, 0.0527, 0.0506, 0.0486, 0.0467, 0.0448, 0.043, 0.0413, 0.0396, 0.038, 0.0364, 0.0349, 0.0335, 0.0321, 0.0308, 0.0295, 0.0283, 0.0271, 0.026, 0.0249, 0.0238, 0.0228, 0.0218, 0.0209, 0.02, 0.0191, 0.0183, 0.0175, 0.0168, 0.016, 0.0153, 0.0146, 0.014, 0.0134, 0.0128, 0.0122, 0.0117, 0.0112, 0.0107, 0.0102, 0.0097, 0.0093, 0.0089, 0.0085, 0.0081, 0.0077, 0.0073]}};
+const C = { blue: "#246ed0", orange: "#be5429", ink: "#142735", grid: "#e3e8ec", muted: "#56687a" };
+const fmt = (v, d) => v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+
+/* ---------- line chart with crosshair, legend, direct labels, table view ---------- */
+function lineChart(host, o) {
+  const W = 720, H = 400, m = { l: 58, r: o.direct ? 120 : 24, t: 12, b: 52 };
+  const head = document.createElement("div"); head.className = "chart-head";
+  const title = document.createElement("span"); title.className = "chart-title"; title.textContent = o.title;
+  const legend = document.createElement("div"); legend.className = "legend";
+  o.series.forEach(s => {
+    const it = document.createElement("span");
+    const sw = el("svg", { viewBox: "0 0 24 8" }); el("line", { x1: 0, x2: 24, y1: 4, y2: 4, stroke: s.color, "stroke-width": 2.5, "stroke-dasharray": s.dash ? "4 3" : "none" }, sw);
+    it.appendChild(sw); it.appendChild(document.createTextNode(s.name)); legend.appendChild(it);
+  });
+  const btn = document.createElement("button"); btn.type = "button"; btn.className = "chart-toggle"; btn.textContent = "Таблица";
+  const right = document.createElement("div"); right.style.display = "flex"; right.style.gap = "1em"; right.style.alignItems = "center";
+  right.append(legend, btn); head.append(title, right); host.appendChild(head);
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "plot", role: "img", "aria-label": o.title }, host);
+  const xs = o.x, X0 = o.xLog ? Math.log10(xs[0]) : xs[0], X1 = o.xLog ? Math.log10(xs[xs.length - 1]) : xs[xs.length - 1];
+  const sx = v => m.l + ((o.xLog ? Math.log10(v) : v) - X0) / (X1 - X0) * (W - m.l - m.r);
+  const sy = v => H - m.b - (v - o.yMin) / (o.yMax - o.yMin) * (H - m.t - m.b);
+  o.yTicks.forEach(v => {
+    el("line", { x1: m.l, x2: W - m.r, y1: sy(v), y2: sy(v), stroke: C.grid, "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 8, y: sy(v) + 5, "text-anchor": "end", "font-size": 16 }, svg).textContent = o.yFmt(v);
+  });
+  el("line", { x1: m.l, x2: W - m.r, y1: sy(o.yMin), y2: sy(o.yMin), stroke: "#b9c3cb", "stroke-width": 1 }, svg);
+  o.xTicks.forEach(v => { el("text", { x: sx(v), y: H - m.b + 22, "text-anchor": "middle", "font-size": 16 }, svg).textContent = o.xFmt(v); });
+  el("text", { x: (m.l + W - m.r) / 2, y: H - 6, "text-anchor": "middle", "font-size": 15 }, svg).textContent = o.xLabel;
+  o.series.forEach(s => {
+    if (s.lo) {
+      const pts = xs.map((x, i) => `${sx(x)},${sy(s.hi[i])}`).concat(xs.map((x, i) => `${sx(x)},${sy(s.lo[i])}`).reverse());
+      el("polygon", { points: pts.join(" "), fill: s.color, opacity: 0.12 }, svg);
+    }
+  });
+  const labelYs = [];
+  o.series.forEach(s => {
+    el("polyline", { points: xs.map((x, i) => `${sx(x)},${sy(s.values[i])}`).join(" "), fill: "none", stroke: s.color, "stroke-width": s.dash ? 2 : 2.5,
+      "stroke-dasharray": s.dash ? "6 4" : "none", "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    if (o.markers) xs.forEach((x, i) => el("circle", { cx: sx(x), cy: sy(s.values[i]), r: 4.5, fill: s.color, stroke: "#fbfaf7", "stroke-width": 2 }, svg));
+    labelYs.push({ s, y: sy(s.values[s.values.length - 1]) });
+  });
+  // direct labels at line ends, de-collided
+  labelYs.sort((a, b) => a.y - b.y); for (let i = 1; i < labelYs.length; i++) if (labelYs[i].y - labelYs[i - 1].y < 18) labelYs[i].y = labelYs[i - 1].y + 18;
+  if (o.direct) labelYs.forEach(({ s, y }) => { const t = el("text", { x: W - m.r + 10, y: y + 5, "font-size": 16 }, svg); t.textContent = s.short || s.name; t.style.fill = C.ink; });
+  // crosshair
+  const hair = el("line", { y1: m.t, y2: H - m.b, stroke: "#9aa7b2", "stroke-width": 1, opacity: 0 }, svg);
+  const dots = o.series.map(s => el("circle", { r: 5, fill: s.color, stroke: "#fff", "stroke-width": 2, opacity: 0 }, svg));
+  const tip = document.createElement("div"); tip.className = "tooltip"; host.appendChild(tip);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent", tabindex: 0 }, svg);
+  let idx = 0;
+  const show = i => {
+    idx = Math.max(0, Math.min(xs.length - 1, i)); const x = sx(xs[idx]);
+    hair.setAttribute("x1", x); hair.setAttribute("x2", x); hair.setAttribute("opacity", 1);
+    o.series.forEach((s, k) => { dots[k].setAttribute("cx", x); dots[k].setAttribute("cy", sy(s.values[idx])); dots[k].setAttribute("opacity", 1); });
+    tip.replaceChildren();
+    const t = document.createElement("div"); t.className = "t"; t.textContent = o.tipX(xs[idx]); tip.appendChild(t);
+    o.series.forEach(s => { const r = document.createElement("div"); r.className = "row"; const i2 = document.createElement("i"); i2.style.setProperty("--c", s.color); if (s.dash) i2.className = "dash";
+      const b = document.createElement("b"); b.textContent = o.yFmtTip(s.values[idx]); r.append(i2, b, document.createTextNode(s.name)); tip.appendChild(r); });
+    const rect = svg.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const px = (x / W) * rect.width + rect.left - hr.left, py = (Math.min(...o.series.map(s => sy(s.values[idx]))) / H) * rect.height + rect.top - hr.top;
+    tip.style.left = Math.min(Math.max(px, 80), hr.width - 80) + "px"; tip.style.top = Math.max(py - 10, 60) + "px"; tip.style.opacity = 1;
+  };
+  const hide = () => { hair.setAttribute("opacity", 0); dots.forEach(d => d.setAttribute("opacity", 0)); tip.style.opacity = 0; };
+  hit.addEventListener("pointermove", e => {
+    const r = svg.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * W;
+    let best = 0, bd = Infinity; xs.forEach((x, i) => { const d = Math.abs(sx(x) - vx); if (d < bd) { bd = d; best = i; } }); show(best);
+  });
+  hit.addEventListener("pointerleave", hide); hit.addEventListener("blur", hide);
+  hit.addEventListener("focus", () => show(idx));
+  hit.addEventListener("keydown", e => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); e.stopPropagation(); show(idx + (e.key === "ArrowRight" ? 1 : -1)); } });
+  // table view
+  const tw = document.createElement("div"); tw.className = "data-table"; tw.hidden = true;
+  const tb = document.createElement("table"); const thr = document.createElement("tr");
+  [o.xLabel, ...o.series.map(s => s.name)].forEach(h => { const th = document.createElement("th"); th.textContent = h; thr.appendChild(th); });
+  const thead = document.createElement("thead"); thead.appendChild(thr); tb.appendChild(thead); const tbody = document.createElement("tbody");
+  (o.tableIdx || xs.map((_, i) => i)).forEach(i => { const tr = document.createElement("tr"); [o.tipX(xs[i]), ...o.series.map(s => o.yFmtTip(s.values[i]))].forEach((v, k) => { const td = document.createElement("td"); td.textContent = v; if (k) td.className = "num"; tr.appendChild(td); }); tbody.appendChild(tr); });
+  tb.appendChild(tbody); tw.appendChild(tb); host.appendChild(tw);
+  btn.addEventListener("click", () => { const on = tw.hidden; tw.hidden = !on; svg.style.display = on ? "none" : ""; btn.textContent = on ? "График" : "Таблица"; });
+}
+
+const every = (arr, k) => arr.map((_, i) => i).filter(i => i % k === 0);
+const pct = v => fmt(v * 100, 0) + "%";
+lineChart(document.getElementById("chart-bd"), {
+  title: "Доля ожиданий B→D дольше t дней", x: DATA.bd.t, yMin: 0, yMax: 1, yTicks: [0, .25, .5, .75, 1], yFmt: pct, yFmtTip: v => fmt(v * 100, 1) + "%",
+  xTicks: [0, 5, 10, 15, 20, 25, 30], xFmt: v => String(v), xLabel: "дни ожидания в B", tipX: v => `t = ${fmt(v, 1)} дн`, tableIdx: every(DATA.bd.t, 5),
+  series: [{ name: "Истина", color: C.ink, dash: true, values: DATA.bd.truth }, { name: "По завершённым", color: C.orange, values: DATA.bd.naive }, { name: "Совместно (с цензурой)", color: C.blue, values: DATA.bd.aware }]
+});
+const q = DATA.q;
+lineChart(document.getElementById("chart-n"), {
+  title: "Средняя ошибка параметров времени, %", x: q.censor_aware.n, xLog: true, yMin: 0, yMax: 32, yTicks: [0, 8, 16, 24, 32], yFmt: v => String(v), yFmtTip: v => fmt(v, 1) + "%",
+  xTicks: q.censor_aware.n, xFmt: v => v.toLocaleString("ru-RU"), direct: true, xLabel: "число трасс (лог. шкала)", tipX: v => `${v.toLocaleString("ru-RU")} трасс`, markers: true,
+  series: [{ name: "По завершённым", short: "По заверш.", color: C.orange, values: q.naive.mean, lo: q.naive.p10, hi: q.naive.p90 }, { name: "Совместно (с цензурой)", short: "Совместно", color: C.blue, values: q.censor_aware.mean, lo: q.censor_aware.p10, hi: q.censor_aware.p90 }]
+});
+
+/* ---------- deck navigation ---------- */
+const slides = [...document.querySelectorAll(".slide")];
+const prev = document.getElementById("previous"), next = document.getElementById("next");
+const notesButton = document.getElementById("notes-button"), notes = document.getElementById("speaker-notes");
+const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const total = slides.reduce((a, s) => a + +s.dataset.seconds, 0);
+let current = 0;
+function showSlide(i) {
+  current = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, k) => { s.hidden = k !== current; });
+  prev.disabled = current === 0; next.disabled = current === slides.length - 1;
+  document.getElementById("slide-status").textContent = `${current + 1} / ${slides.length}`;
+  const start = slides.slice(0, current).reduce((a, s) => a + +s.dataset.seconds, 0), end = start + +slides[current].dataset.seconds;
+  document.getElementById("timing").textContent = `${mmss(start)}–${mmss(end)} / ${mmss(total)}`;
+  document.getElementById("notes-title").textContent = `Слайд ${current + 1} · ${slides[current].dataset.seconds} секунд`;
+  document.getElementById("notes-text").textContent = slides[current].querySelector(".speaker-text").content.textContent.trim();
+  history.replaceState(null, "", `#slide-${current + 1}`);
+}
+const toggleNotes = () => { notes.hidden = !notes.hidden; notesButton.setAttribute("aria-expanded", String(!notes.hidden)); };
+async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch {} }
+prev.addEventListener("click", () => showSlide(current - 1)); next.addEventListener("click", () => showSlide(current + 1));
+notesButton.addEventListener("click", toggleNotes); document.getElementById("fullscreen-button").addEventListener("click", toggleFullscreen);
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.target.tagName === "BUTTON" && e.key === " ") return;
+  if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); showSlide(current + 1); }
+  else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); showSlide(current - 1); }
+  else if (e.key === "Home") { e.preventDefault(); showSlide(0); }
+  else if (e.key === "End") { e.preventDefault(); showSlide(slides.length - 1); }
+  else if ("nт".includes(e.key.toLowerCase())) toggleNotes();
+  else if ("fа".includes(e.key.toLowerCase())) toggleFullscreen();
+});
+const m0 = /^#slide-(\d+)$/.exec(location.hash); showSlide(m0 ? +m0[1] - 1 : 0);
+</script>
+</body>
+</html>

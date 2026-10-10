@@ -25,7 +25,10 @@ dist/
 ~$*
 .~lock.*
 
-examples/SMBUSummerPractic/
+examples/SMBUSummerPractic
+my work/
 
 .claude
 CLAUDE.md
+AGENTS.md
+presentations/
