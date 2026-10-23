@@ -1,0 +1,221 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\1}{\mathbf{1}}
+
+\title{Метрики качества сети состояний с цензурой\\\large конспект к \code{survpm.metrics}}
+\date{23 октября 2026}
+
+\begin{document}
+\maketitle
+
+\section{Постановка}
+
+\paragraph{Модель.} Сеть состояний с одним токеном. Из состояния $s$ выход $s\to d$
+выбирается с вероятностью $p_{sd}$ ($\sum_d p_{sd}=1$), время перехода $T_{sd}\sim f_{sd}(t;\theta_{sd})$,
+$S_{sd}(t)=P(T_{sd}>t)$. Наблюдения~--- интервалы ожидания в состоянии:
+завершённый $(s,d,t)$ и цензурированный $(s,c)$, у которого известно только,
+что ожидание длилось не меньше $c$, а выход неизвестен.
+
+\paragraph{Правдоподобие с цензурой.}
+\[
+\log L=\sum_{(s,d,t)}\log\bigl(p_{sd}\,f_{sd}(t)\bigr)+\sum_{(s,c)}\log\sum_d p_{sd}\,S_{sd}(c).
+\]
+Модель \code{censor\_aware} максимизирует $\log L$; модель \code{naive}~--- только первую сумму.
+Семейство $f_{sd}$ выбирается по $\mathrm{AIC}=2k-2\log L$ на завершённых интервалах обучения.
+
+\paragraph{Протокол.} 5-fold кросс-валидация по целым трассам, фолды равны
+по доле цензурированных трасс (\code{crossval.cross\_validate}). Обе модели оцениваются
+на $4/5$ трасс, метрики считаются на оставшейся $1/5$. Итог~--- среднее и стандартное
+отклонение по фолдам, а также попарная разница $\Delta=\text{censor\_aware}-\text{naive}$
+внутри фолда (\code{paired\_differences}).
+
+\paragraph{Варианты A и Б.}
+\begin{itemize}
+\item \textbf{A}~--- только полные тестовые трассы (дошли до терминала).
+\item \textbf{Б}~--- все тестовые трассы; цензурированная трасса считается \emph{префиксом}.
+Как именно это учитывается, сказано у каждой метрики.
+\end{itemize}
+
+\section{Уровень 1: process mining (\code{metrics.process})}
+
+Сравниваются две сети Петри: сеть состояний модели (без места \code{CENS}) и сеть
+Inductive Miner, обе построены по обучающим трассам. Метрики~--- PM4Py.
+
+\paragraph{Fitness по token replay.} Для журнала суммируются по трассам
+пропущенные $m$, потреблённые $c$, оставшиеся $r$ и произведённые $p$ фишки:
+\[
+\mathrm{fitness}_{\mathrm{tok}}=\tfrac12\Bigl(1-\tfrac{m}{c}\Bigr)+\tfrac12\Bigl(1-\tfrac{r}{p}\Bigr).
+\]
+В варианте Б цензурированная трасса проигрывается с пустой финальной маркировкой,
+поэтому её оставшиеся фишки не штрафуются ($r$ берётся только по полным трассам).
+
+\paragraph{Fitness по alignments} (только A). Для трассы $\sigma$ находится оптимальное
+выравнивание $\gamma_\sigma$ со стоимостью $\delta(\gamma_\sigma)$ (ход только в журнале или
+только в модели стоит 1):
+\[
+\mathrm{fitness}_{\mathrm{align}}=1-\frac{\sum_\sigma\delta(\gamma_\sigma)}{\sum_\sigma\bigl(|\sigma|+\min_{\tau\in M}|\tau|\bigr)}.
+\]
+
+\paragraph{Precision (ETC).} Для каждого префикса $h$ журнала сравниваются разрешённые
+моделью переходы $\mathrm{en}(h)$ и реально встреченные в журнале продолжения;
+лишние разрешённые переходы~--- «escaping», $\mathrm{esc}(h)$:
+\[
+\mathrm{precision}=1-\frac{\sum_h w_h\,|\mathrm{esc}(h)|}{\sum_h w_h\,|\mathrm{en}(h)|},
+\]
+$w_h$~--- число трасс с префиксом $h$. Метрика построена на префиксах, поэтому в варианте Б
+цензурированные трассы входят как есть. Есть версии по token replay и по alignments (только A).
+
+\paragraph{Generalization.} Если переход $t$ сработал $n_t$ раз при проигрывании журнала,
+\[
+\mathrm{generalization}=1-\frac{1}{|T|}\sum_{t\in T}\frac{1}{\sqrt{n_t}}.
+\]
+
+\paragraph{Simplicity} (по степени дуг). При средней степени узла $\bar k$ сети
+\[
+\mathrm{simplicity}=\frac{1}{1+\max(0,\ \bar k-2)}.
+\]
+
+Сеть состояний строится из всех переходов обучения, поэтому на обучении её fitness равен 1;
+меньше единицы он бывает только из-за переходов, которых в обучении не было.
+
+\section{Уровень 2: вероятности путей (\code{metrics.stochastic})}
+
+Модель переводится в стохастический детерминированный автомат (SDFA, \code{to\_sdfa}):
+состояние~--- место сети, метка перехода~--- состояние назначения, вероятность~--- $p_{sd}$.
+В варианте Б в каждом состоянии добавляется остановка с наблюдаемой вероятностью цензуры
+$q_s=N_{s,\mathrm{cens}}/N_{s,\mathrm{visits}}$, остальные вероятности умножаются на $1-q_s$.
+$P_M(\sigma)$~--- вероятность трассы в автомате, $P_L(\sigma)$~--- её доля в тестовом журнале.
+Вероятности округляются до $10^{-3}$: Ebi считает точно, в рациональных числах, и при
+длинных знаменателях падает с «cannot compute ER».
+
+\paragraph{Entropic relevance} (Ebi, бит на трассу, меньше~--- лучше). Пусть $\rho$~---
+доля тестовых трасс с $P_M(\sigma)>0$, $\Lambda$~--- алфавит. Тогда
+\[
+\mathrm{ER}=H_0(\rho)+\sum_\sigma P_L(\sigma)
+\begin{cases}
+-\log_2 P_M(\sigma), & P_M(\sigma)>0,\\
+(|\sigma|+1)\log_2(|\Lambda|+1), & P_M(\sigma)=0,
+\end{cases}
+\]
+где $H_0(\rho)=-\rho\log_2\rho-(1-\rho)\log_2(1-\rho)$~--- цена кодирования того, какие трассы модель допускает.
+
+\paragraph{uEMSC} (unit Earth Movers' Stochastic Conformance, Ebi, больше~--- лучше):
+\[
+\mathrm{uEMSC}=1-\sum_\sigma\max\bigl(P_L(\sigma)-P_M(\sigma),\ 0\bigr).
+\]
+
+\paragraph{EMD языков} (меньше~--- лучше). Язык модели оценивается по $5000$ симулированным
+трассам ($\hat P_M$). Расстояние между трассами~--- нормированный Левенштейн:
+\[
+d(\sigma,\sigma')=\frac{\mathrm{Lev}(\sigma,\sigma')}{\max(|\sigma|,|\sigma'|)},
+\]
+\[
+\mathrm{EMD}=\min_{\pi\in\Pi(P_L,\hat P_M)}\sum_{\sigma,\sigma'}\pi(\sigma,\sigma')\,d(\sigma,\sigma'),
+\]
+$\Pi$~--- совместные распределения с заданными маргиналами. Транспортная задача решается
+пакетом POT (\code{ot.emd2}); матрица только «варианты журнала $\times$ варианты модели».
+
+\section{Уровень 3: время (\code{metrics.temporal})}
+
+Для сравнения журналов модель симулируется столько раз, сколько тестовых трасс, с теми же
+моментами входа. В варианте Б симулированная трасса обрывается в момент цензуры парной
+тестовой трассы, в A~--- не обрывается.
+
+\paragraph{Temporal profile} (PM4Py). Для каждой пары активностей $(a,b)$, где $b$ идёт
+после $a$ в одной трассе, по эталонному журналу оцениваются среднее $\mu_{ab}$ и
+стандартное отклонение $s_{ab}$ времени между ними. Трасса отклоняется, если хоть для
+одной пары $|t_b-t_a-\mu_{ab}|>\zeta\,s_{ab}$ (по умолчанию $\zeta=6$). Метрика
+\code{temporal\_deviation\_share}~--- доля тестовых трасс с отклонениями. Эталон~---
+симуляция модели; строка \code{train\_log}~--- базовая линия с профилем по обучающему журналу.
+
+\paragraph{Расстояния журналов} (log-distance-measures; тест $L$ против симуляции $S$):
+\begin{itemize}
+\item \code{cfld}~--- control-flow log distance: трассы $L$ и $S$ попарно сопоставляются
+  (задача о назначениях) по нормированному расстоянию Дамерау--Левенштейна, берётся среднее
+  расстояние в оптимальном сопоставлении;
+\item \code{ngram\_3}~--- гистограммы 3-грамм активностей $h_L,h_S$:
+  $\sum_g|h_L(g)-h_S(g)|\,/\,\sum_g\bigl(h_L(g)+h_S(g)\bigr)$;
+\item \code{cycle\_time\_emd}~--- одномерный EMD (Вассерштейн-1) между распределениями
+  длительностей трасс, бины по 1 часу, в часах;
+\item \code{absolute\_event\_emd}~--- то же для абсолютных моментов событий, в часах.
+\end{itemize}
+
+\paragraph{KS по рёбрам.} Для ребра $e=s\to d$ с $n_e$ завершёнными тестовыми интервалами
+\[
+D_e=\sup_t\bigl|\hat F_e(t)-F_e(t;\hat\theta_e)\bigr|,\qquad
+\mathrm{edge\_ks}=\frac{\sum_e n_e D_e}{\sum_e n_e}.
+\]
+Цензурированные интервалы не входят: их выход неизвестен.
+
+\paragraph{Время до терминала.} Модель симулируется без цензуры ($5000$ трасс),
+$T_j$~--- время от старта до терминала, $S_M(t)=\frac1N\sum_j\1\{T_j>t\}$.
+По тестовым трассам с длительностью $t_i$ и признаком исхода $\delta_i$ строится
+оценка Каплана--Майера
+\[
+\hat S_{KM}(t)=\prod_{t_{(k)}\le t}\Bigl(1-\frac{d_k}{n_k}\Bigr),
+\]
+$d_k$~--- число исходов в момент $t_{(k)}$, $n_k$~--- число трасс под наблюдением.
+Эти метрики сами учитывают цензуру, поэтому записываются в строку Б.
+\begin{itemize}
+\item $\mathrm{km\_sup}=\max_{t\in[0,t_{\max}]}|S_M(t)-\hat S_{KM}(t)|$;
+\item $\mathrm{km\_l1\_days}=\int_0^{t_{\max}}|S_M(t)-\hat S_{KM}(t)|\,dt$ (в днях);
+\item log-rank (lifelines): тест равенства функций выживания тестовой выборки
+  (с цензурой) и симуляции; \code{logrank\_statistic}~--- статистика $\chi^2_1$,
+  \code{logrank\_p}~--- p-value. На больших выборках отвергает гипотезу даже при малом
+  расхождении, поэтому главное~--- \code{km\_sup} и \code{km\_l1\_days};
+\item integrated Brier score (scikit-survival) с весами IPCW, $\hat G$~--- оценка
+  Каплана--Майера для цензуры по обучающим трассам:
+\[
+\mathrm{BS}(t)=\frac1n\sum_i\Bigl[\frac{S_M(t)^2\,\1\{t_i\le t,\ \delta_i=1\}}{\hat G(t_i)}
++\frac{(1-S_M(t))^2\,\1\{t_i>t\}}{\hat G(t)}\Bigr],
+\]
+\[
+\mathrm{IBS}=\frac{1}{t_b-t_a}\int_{t_a}^{t_b}\mathrm{BS}(t)\,dt.
+\]
+  Сетка~--- 15 квантилей времён исхода от 10\% до 80\%; тестовые трассы длиннее
+  максимальной обучающей исключаются (иначе $\hat G$ не определена).
+\end{itemize}
+
+\section{Уровень 4: обобщение (\code{CensoredStateNet.nll})}
+
+Отрицательное правдоподобие с цензурой (формула из раздела 1) на тестовых интервалах:
+\[
+\mathrm{nll\_per\_interval}=-\frac{\log L_{\mathrm{test}}}{N_{\mathrm{int}}},\qquad
+\mathrm{nll\_per\_trace}=-\frac{\log L_{\mathrm{test}}}{N_{\mathrm{traces}}}.
+\]
+Одна формула для обеих моделей, меньше~--- лучше. Тестовые трассы с переходом или
+состоянием, которых не было в обучении, из $\log L$ исключаются без сглаживания; их доля~---
+отдельная метрика \code{unseen\_share}.
+
+\section{Сводка}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Метрика & Лучше & Варианты \\
+\midrule
+fitness, precision (token) & больше & A, Б \\
+fitness, precision (alignments) & больше & A \\
+generalization, simplicity & больше & A, Б \\
+entropic relevance & меньше & A, Б \\
+uEMSC & больше & A, Б \\
+EMD языков & меньше & A, Б \\
+temporal\_deviation\_share & меньше & A, Б \\
+cfld, ngram\_3 & меньше & A, Б \\
+cycle\_time\_emd, absolute\_event\_emd & меньше & A, Б \\
+edge\_ks & меньше & A, Б (одинаковы) \\
+km\_sup, km\_l1\_days, ibs & меньше & Б \\
+logrank\_p & больше & Б \\
+nll\_per\_interval, nll\_per\_trace & меньше & --- \\
+unseen\_share & справочно & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

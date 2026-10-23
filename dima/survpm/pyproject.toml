@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "survpm"
+version = "0.1.0"
+description = "Стохастические сети состояний с правым цензурированием, оцениваемые по журналам событий"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10"]
+
+[project.optional-dependencies]
+pm4py = ["pm4py>=2.7", "graphviz"]
+metrics = ["pm4py>=2.7", "graphviz", "ebi-pm", "pot", "jellyfish", "lifelines", "scikit-survival", "scikit-learn"]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

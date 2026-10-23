@@ -1,0 +1,5 @@
+,unseen_share,unseen_share,nll_per_interval,nll_per_interval,nll_per_trace,nll_per_trace
+,mean,std,mean,std,mean,std
+model,,,,,,
+naive,0.0,0.0,2.7424523366909406,0.04781127176220754,9.076767322603937,0.29368442864894223
+censor_aware,0.0,0.0,2.7381244459369602,0.043420335605256904,9.06244732377415,0.28585713575029426
