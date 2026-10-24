@@ -1,7 +1,7 @@
 """Уровень 2: вероятности путей — entropic relevance и uEMSC (Ebi), EMD языков (POT).
 
-Вариант ``A`` — полные трассы против модели без остановок; ``Б`` — все трассы против модели,
-которая обрывается в состоянии с наблюдаемой вероятностью цензуры ``q``.
+Тестовые трассы, включая цензурированные, сравниваются с моделью, которая обрывается
+в состоянии с наблюдаемой вероятностью цензуры ``q``.
 """
 import ebi
 import jellyfish
@@ -55,17 +55,14 @@ def language_emd(log_language, model_language):
     return float(ot.emd2(weights[0] / weights[0].sum(), weights[1] / weights[1].sum(), distance))
 
 
-def level2(models, test_log, complete_ids, n_sim=5000, seed=None):
+def level2(models, test_log, n_sim=5000, seed=None):
     """Entropic relevance (меньше — лучше), uEMSC (больше — лучше), EMD (меньше — лучше)."""
-    logs = {"A": test_log.loc[test_log["case_id"].isin(complete_ids)], "Б": test_log}
+    event_log = pm4py.convert_to_event_log(to_pm4py_log(test_log))
     rows = []
     for name, model in models.items():
-        for variant, log in logs.items():
-            censoring = variant == "Б"
-            event_log = pm4py.convert_to_event_log(to_pm4py_log(log))
-            traces = model.simulate(n_sim, seed, censoring=censoring)
-            rows.append(dict(model=name, variant=variant,
-                             entropic_relevance=entropic_relevance(event_log, model, censoring),
-                             uemsc=_ebi_number(ebi.conformance_unit_earth_movers(event_log, model.to_sdfa(censoring))),
-                             emd=language_emd(language(log), simulated_language(traces))))
+        traces = model.simulate(n_sim, seed, censoring=True)
+        rows.append(dict(model=name,
+                         entropic_relevance=entropic_relevance(event_log, model, censoring=True),
+                         uemsc=_ebi_number(ebi.conformance_unit_earth_movers(event_log, model.to_sdfa(censoring=True))),
+                         emd=language_emd(language(test_log), simulated_language(traces))))
     return rows

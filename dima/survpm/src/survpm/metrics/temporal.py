@@ -3,11 +3,11 @@
 * temporal profile (PM4Py): доля тестовых трасс с отклонениями от профиля, построенного по
   обучающему журналу (``model="train_log"``, базовая линия) или по симуляции модели;
 * расстояния журналов (log-distance-measures): тест против симуляции того же размера с теми же
-  моментами входа; в варианте Б симулированная трасса обрывается в момент цензуры парной
+  моментами входа; симулированная трасса обрывается в момент цензуры парной
   тестовой трассы; ``cycle_time_emd`` и ``absolute_event_emd`` — в часах;
 * KS по рёбрам на тестовых интервалах;
 * выживание: Каплан–Майер теста против модели (``km_sup``, ``km_l1_days``), log-rank,
-  integrated Brier score. Они сами учитывают цензуру и записываются в строку Б.
+  integrated Brier score.
 
 log-distance-measures формально требует Python < 3.13:
 ``pip install --ignore-requires-python log-distance-measures jellyfish pulp``.
@@ -82,29 +82,22 @@ def edge_ks(test_intervals, edges):
 
 
 def level3(models, train_log, test_log, train_cases, test_cases, test_intervals, n_sim=5000, seed=0):
-    """Строки метрик для ``train_log`` и каждой модели, варианты A и Б."""
+    """Строки метрик для ``train_log`` (базовая линия temporal profile) и каждой модели."""
     test_cases = test_cases.set_index("case_id").loc[test_log["case_id"].unique()].reset_index()
-    complete_ids = test_cases.loc[test_cases["event"] == 1, "case_id"]
-    logs = {"A": test_log.loc[test_log["case_id"].isin(complete_ids)], "Б": test_log}
-    horizons = {"A": test_cases.loc[test_cases["event"] == 1], "Б": test_cases}
     train_profile = pm4py.discover_temporal_profile(to_pm4py_log(train_log))
-    rows = [dict(model="train_log", variant=v, temporal_deviation_share=temporal_deviation_share(log, train_profile))
-            for v, log in logs.items()]
+    rows = [dict(model="train_log", temporal_deviation_share=temporal_deviation_share(test_log, train_profile))]
+    horizon = np.where(test_cases["event"] == 1, np.inf, test_cases["duration"])
     for name, model in models.items():
         free = model.simulate(n_sim, seed)
         profile = pm4py.discover_temporal_profile(to_pm4py_log(traces_to_log(free, [train_cases["entry"].min()] * n_sim)))
-        time_rows = survival_metrics(test_cases, train_cases, completion_times(free, model.terminal))
-        for variant, log in logs.items():
-            cases = horizons[variant]
-            horizon = np.where(cases["event"] == 1, np.inf, cases["duration"])
-            simulated = traces_to_log(model.simulate(len(cases), seed + 1, horizon=horizon), cases["entry"])
-            rows.append(dict(model=name, variant=variant,
-                             temporal_deviation_share=temporal_deviation_share(log, profile),
-                             cfld=control_flow_log_distance(log, LOG_IDS, simulated, LOG_IDS, parallel=False),
-                             ngram_3=n_gram_distribution_distance(log, LOG_IDS, simulated, LOG_IDS, n=3, normalize=True),
-                             cycle_time_emd=cycle_time_distribution_distance(log, LOG_IDS, simulated, LOG_IDS,
-                                                                             bin_size=datetime.timedelta(hours=1)),
-                             absolute_event_emd=absolute_event_distribution_distance(log, LOG_IDS, simulated, LOG_IDS),
-                             edge_ks=edge_ks(test_intervals, model.edges_),
-                             **(time_rows if variant == "Б" else {})))
+        simulated = traces_to_log(model.simulate(len(test_cases), seed + 1, horizon=horizon), test_cases["entry"])
+        rows.append(dict(model=name,
+                         temporal_deviation_share=temporal_deviation_share(test_log, profile),
+                         cfld=control_flow_log_distance(test_log, LOG_IDS, simulated, LOG_IDS, parallel=False),
+                         ngram_3=n_gram_distribution_distance(test_log, LOG_IDS, simulated, LOG_IDS, n=3, normalize=True),
+                         cycle_time_emd=cycle_time_distribution_distance(test_log, LOG_IDS, simulated, LOG_IDS,
+                                                                         bin_size=datetime.timedelta(hours=1)),
+                         absolute_event_emd=absolute_event_distribution_distance(test_log, LOG_IDS, simulated, LOG_IDS),
+                         edge_ks=edge_ks(test_intervals, model.edges_),
+                         **survival_metrics(test_cases, train_cases, completion_times(free, model.terminal))))
     return rows

@@ -4,5 +4,5 @@
 * :mod:`.stochastic` — уровень 2, вероятности путей (Ebi, POT);
 * :mod:`.temporal` — уровень 3, время (PM4Py, log-distance-measures, lifelines, scikit-survival);
 * уровень 4 — :meth:`survpm.CensoredStateNet.nll`;
-* :mod:`.crossval` — всё вместе на k фолдах.
+* :mod:`.crossval` — всё вместе на k фолдах; свои метрики — ``CrossValidator.set_metrics``.
 """

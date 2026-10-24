@@ -1,8 +1,7 @@
 """Уровень 1: fitness, precision, generalization, simplicity (PM4Py).
 
-Вариант ``A`` — только полные трассы. Вариант ``Б`` — все трассы, цензурированная трасса
-считается префиксом: token replay без финальной маркировки, оставшиеся фишки не штрафуются;
-precision (ETC) и так строится по префиксам; alignments только в ``A``.
+Цензурированная трасса считается префиксом: token replay без финальной маркировки,
+оставшиеся фишки не штрафуются; precision (ETC) и так строится по префиксам.
 """
 import numpy as np
 import pm4py
@@ -29,30 +28,18 @@ def prefix_fitness(complete, censored, net, im, fm):
 
 
 def conformance(net, im, fm, log, complete_ids):
-    """Строки метрик для вариантов A и Б; ``log`` — журнал ``case_id, activity, timestamp``."""
+    """Метрики сети на журнале ``case_id, activity, timestamp``; трассы не из ``complete_ids`` — префиксы."""
     log = to_pm4py_log(log)
     is_complete = log["case:concept:name"].isin(complete_ids)
-    complete, censored = log.loc[is_complete], log.loc[~is_complete]
-    simplicity = pm4py.simplicity_petri_net(net, im, fm)
-    return [
-        dict(variant="A",
-             fitness_token=pm4py.fitness_token_based_replay(complete, net, im, fm)["log_fitness"],
-             fitness_alignments=pm4py.fitness_alignments(complete, net, im, fm)["log_fitness"],
-             precision_token=pm4py.precision_token_based_replay(complete, net, im, fm),
-             precision_alignments=pm4py.precision_alignments(complete, net, im, fm),
-             generalization=pm4py.generalization_tbr(complete, net, im, fm),
-             simplicity=simplicity),
-        dict(variant="Б",
-             fitness_token=prefix_fitness(complete, censored, net, im, fm),
-             precision_token=pm4py.precision_token_based_replay(log, net, im, fm),
-             generalization=pm4py.generalization_tbr(log, net, im, fm),
-             simplicity=simplicity),
-    ]
+    return dict(fitness_token=prefix_fitness(log.loc[is_complete], log.loc[~is_complete], net, im, fm),
+                precision_token=pm4py.precision_token_based_replay(log, net, im, fm),
+                generalization=pm4py.generalization_tbr(log, net, im, fm),
+                simplicity=pm4py.simplicity_petri_net(net, im, fm))
 
 
 def level1(model, train_log, test_log, complete_ids):
     """Сеть состояний модели (без места CENS) против Inductive Miner на обучающем журнале."""
     nets = {"state_net": model.to_pm4py(censoring=False),
             "inductive": pm4py.discover_petri_net_inductive(to_pm4py_log(train_log))}
-    return [dict(model=name, **row) for name, (net, im, fm) in nets.items()
-            for row in conformance(net, im, fm, test_log, complete_ids)]
+    return [dict(model=name, **conformance(net, im, fm, test_log, complete_ids))
+            for name, (net, im, fm) in nets.items()]

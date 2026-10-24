@@ -52,14 +52,40 @@ crossval.summarize(results["level3"])                          # среднее 
 crossval.paired_differences(results["level4"], "nll_per_interval")   # censor_aware − naive по фолдам
 ```
 
+### Свои метрики: `set_metrics`
+
+Метрика — функция от фолда `fold`, которая возвращает строку (`dict`) или список строк.
+В `fold` есть обученные модели `fold.models` (`naive`, `censor_aware`), обучающие и тестовые
+журналы, трассы и интервалы (`fold.train_log`, `fold.test_cases`, `fold.test_intervals` …),
+`fold.seed` и `fold.n_sim`. `set_metrics` добавляет метрику под новым именем, заменяет под
+существующим (`level1` … `level4`) и убирает при значении `None`.
+
+```python
+import numpy as np
+
+def median_days(model, fold):               # одно число на модель
+    return float(np.median(model.completion_times(2000, fold.seed)))
+
+cv = crossval.CrossValidator("A", "D", k=5).set_metrics(
+    median=crossval.per_model(median_days),  # per_model: по строке на каждую модель фолда
+    censored=lambda fold: dict(share=1 - fold.test_cases["event"].mean()),
+    level2=None,                             # не считать уровень 2
+)
+results = cv.run(raw, censoring["end"], censoring["reason"])
+crossval.summarize(results["median"])
+```
+
+То же короче: `crossval.cross_validate(raw, "A", "D", ..., metrics=dict(median=crossval.per_model(median_days)))`.
+Чтобы сравнивать другие модели, переопределите `CrossValidator.fit_models`.
+
 | Уровень | Метрики | Модуль |
 |---|---|---|
-| 1. Process mining | fitness и precision (token replay, alignments), generalization, simplicity; сеть состояний против Inductive Miner | `metrics.process` |
+| 1. Process mining | fitness и precision (token replay), generalization, simplicity; сеть состояний против Inductive Miner | `metrics.process` |
 | 2. Вероятности путей | entropic relevance, uEMSC (Ebi), EMD языков (POT) | `metrics.stochastic` |
 | 3. Время | temporal profile, CFLD, 3-граммы, EMD длительности трасс и времени событий, KS по рёбрам, расстояние до Каплана–Майера, log-rank, integrated Brier score | `metrics.temporal` |
 | 4. Обобщение | −log L тестовых интервалов с цензурой, доля трасс с невиданными переходами | `CensoredStateNet.nll` |
 
-Вариант `A` — только полные тестовые трассы, `Б` — все, цензурированная трасса считается
+Метрики считаются на всех тестовых трассах, цензурированная трасса считается
 префиксом. Фолды делятся целыми трассами и равны по доле цензурированных трасс.
 
 ## Устройство
