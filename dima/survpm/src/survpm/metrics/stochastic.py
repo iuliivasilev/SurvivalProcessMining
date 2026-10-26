@@ -11,6 +11,7 @@ import pandas as pd
 import pm4py
 
 from ..adapters import to_pm4py_log
+from .fold import per_model
 
 
 def _ebi_number(result):
@@ -20,7 +21,7 @@ def _ebi_number(result):
     return float(str(result).split("Approximately")[-1])
 
 
-def entropic_relevance(event_log, model, censoring=False):
+def _entropic_relevance(event_log, model, censoring=False):
     """Entropic relevance (Ebi), бит на трассу; при «cannot compute ER» округление грубее."""
     for digits in (3, 2):
         try:
@@ -55,14 +56,27 @@ def language_emd(log_language, model_language):
     return float(ot.emd2(weights[0] / weights[0].sum(), weights[1] / weights[1].sum(), distance))
 
 
-def level2(models, test_log, n_sim=5000, seed=None):
-    """Entropic relevance (меньше — лучше), uEMSC (больше — лучше), EMD (меньше — лучше)."""
-    event_log = pm4py.convert_to_event_log(to_pm4py_log(test_log))
-    rows = []
-    for name, model in models.items():
-        traces = model.simulate(n_sim, seed, censoring=True)
-        rows.append(dict(model=name,
-                         entropic_relevance=entropic_relevance(event_log, model, censoring=True),
-                         uemsc=_ebi_number(ebi.conformance_unit_earth_movers(event_log, model.to_sdfa(censoring=True))),
-                         emd=language_emd(language(test_log), simulated_language(traces))))
-    return rows
+def _event_log(fold):
+    return fold.cached("ebi_test_log", lambda: pm4py.convert_to_event_log(to_pm4py_log(fold.test_log)))
+
+
+@per_model
+def entropic_relevance(model, fold):
+    """Бит на трассу, меньше — лучше."""
+    return _entropic_relevance(_event_log(fold), model, censoring=True)
+
+
+@per_model
+def uemsc(model, fold):
+    """1 − TV по трассам, больше — лучше."""
+    return _ebi_number(ebi.conformance_unit_earth_movers(_event_log(fold), model.to_sdfa(censoring=True)))
+
+
+@per_model
+def emd(model, fold):
+    """EMD языков теста и симуляции, меньше — лучше."""
+    traces = model.simulate(fold.n_sim, fold.seed, censoring=True)
+    return language_emd(language(fold.test_log), simulated_language(traces))
+
+
+METRICS = {f.__name__: f for f in (entropic_relevance, uemsc, emd)}

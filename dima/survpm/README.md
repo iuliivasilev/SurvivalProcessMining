@@ -43,22 +43,44 @@ net, im, fm = model.to_pm4py()       # сеть Петри PM4Py с местом
 
 ## Метрики и кросс-валидация
 
+По умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —
+по одной, уровнем или все сразу.
+
 ```python
 from survpm.metrics import crossval
 
 raw, censoring = datasets.generate_ad(1000, seed=2026)
-results = crossval.cross_validate(raw, "A", "D", censoring["end"], censoring["reason"], k=5)
-crossval.summarize(results["level3"])                          # среднее и std по фолдам
+cv = crossval.CrossValidator("A", "D", k=5)
+cv.add_metrics("all")                       # все уровни
+# cv.add_metrics("level1", "level4")        # уровнями
+# cv.add_metrics("uemsc", "km_sup", "ibs")  # по одной
+results = cv.run(raw, censoring["end"], censoring["reason"])
+crossval.summarize(results["level3"])                                # среднее и std по фолдам
 crossval.paired_differences(results["level4"], "nll_per_interval")   # censor_aware − naive по фолдам
 ```
 
-### Свои метрики: `set_metrics`
+`run` возвращает по таблице на уровень, в ней только выбранные метрики этого уровня.
+`remove_metrics` убирает метрики так же: по имени, уровнем или `"all"`. Короткая форма:
+`crossval.cross_validate(raw, "A", "D", ..., metrics=["level3", "uemsc"])` (по умолчанию `"all"`).
+Имена всех встроенных метрик — `crossval.METRICS`, по уровням — `crossval.LEVELS`:
 
-Метрика — функция от фолда `fold`, которая возвращает строку (`dict`) или список строк.
+| Уровень | Имена |
+|---|---|
+| `level1` | `fitness_token`, `precision_token`, `generalization`, `simplicity` |
+| `level2` | `entropic_relevance`, `uemsc`, `emd` |
+| `level3` | `temporal_deviation_share`, `cfld`, `ngram_3`, `cycle_time_emd`, `absolute_event_emd`, `edge_ks`, `km_sup`, `km_l1_days`, `logrank` (колонки `logrank_statistic`, `logrank_p`), `ibs` |
+| `level4` | `unseen_share`, `nll_per_interval`, `nll_per_trace` |
+
+Метрики одного фолда делят общие вычисления (симуляции, сети, журналы PM4Py), поэтому
+уровень целиком не дороже, чем его метрики по отдельности.
+
+### Свои метрики
+
+Своя метрика добавляется тем же `add_metrics` под своим именем и попадает в отдельную таблицу.
+Это функция от фолда `fold`, которая возвращает строку (`dict`) или список строк.
 В `fold` есть обученные модели `fold.models` (`naive`, `censor_aware`), обучающие и тестовые
 журналы, трассы и интервалы (`fold.train_log`, `fold.test_cases`, `fold.test_intervals` …),
-`fold.seed` и `fold.n_sim`. `set_metrics` добавляет метрику под новым именем, заменяет под
-существующим (`level1` … `level4`) и убирает при значении `None`.
+`fold.seed` и `fold.n_sim`.
 
 ```python
 import numpy as np
@@ -66,16 +88,15 @@ import numpy as np
 def median_days(model, fold):               # одно число на модель
     return float(np.median(model.completion_times(2000, fold.seed)))
 
-cv = crossval.CrossValidator("A", "D", k=5).set_metrics(
+cv = crossval.CrossValidator("A", "D", k=5).add_metrics(
+    "level3",
     median=crossval.per_model(median_days),  # per_model: по строке на каждую модель фолда
     censored=lambda fold: dict(share=1 - fold.test_cases["event"].mean()),
-    level2=None,                             # не считать уровень 2
 )
 results = cv.run(raw, censoring["end"], censoring["reason"])
 crossval.summarize(results["median"])
 ```
 
-То же короче: `crossval.cross_validate(raw, "A", "D", ..., metrics=dict(median=crossval.per_model(median_days)))`.
 Чтобы сравнивать другие модели, переопределите `CrossValidator.fit_models`.
 
 | Уровень | Метрики | Модуль |
@@ -83,7 +104,7 @@ crossval.summarize(results["median"])
 | 1. Process mining | fitness и precision (token replay), generalization, simplicity; сеть состояний против Inductive Miner | `metrics.process` |
 | 2. Вероятности путей | entropic relevance, uEMSC (Ebi), EMD языков (POT) | `metrics.stochastic` |
 | 3. Время | temporal profile, CFLD, 3-граммы, EMD длительности трасс и времени событий, KS по рёбрам, расстояние до Каплана–Майера, log-rank, integrated Brier score | `metrics.temporal` |
-| 4. Обобщение | −log L тестовых интервалов с цензурой, доля трасс с невиданными переходами | `CensoredStateNet.nll` |
+| 4. Обобщение | −log L тестовых интервалов с цензурой, доля трасс с невиданными переходами | `metrics.likelihood` |
 
 Метрики считаются на всех тестовых трассах, цензурированная трасса считается
 префиксом. Фолды делятся целыми трассами и равны по доле цензурированных трасс.

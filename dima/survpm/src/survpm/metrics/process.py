@@ -1,8 +1,12 @@
 """Уровень 1: fitness, precision, generalization, simplicity (PM4Py).
 
+Сеть состояний модели ``censor_aware`` сравнивается с Inductive Miner (строки ``state_net``, ``inductive``).
+
 Цензурированная трасса считается префиксом: token replay без финальной маркировки,
 оставшиеся фишки не штрафуются; precision (ETC) и так строится по префиксам.
 """
+from functools import wraps
+
 import numpy as np
 import pm4py
 from pm4py.algo.conformance.tokenreplay import algorithm as token_replay
@@ -27,19 +31,47 @@ def prefix_fitness(complete, censored, net, im, fm):
     return .5 * (1 - missing / consumed) + .5 * (1 - remaining / produced)
 
 
-def conformance(net, im, fm, log, complete_ids):
-    """Метрики сети на журнале ``case_id, activity, timestamp``; трассы не из ``complete_ids`` — префиксы."""
-    log = to_pm4py_log(log)
-    is_complete = log["case:concept:name"].isin(complete_ids)
-    return dict(fitness_token=prefix_fitness(log.loc[is_complete], log.loc[~is_complete], net, im, fm),
-                precision_token=pm4py.precision_token_based_replay(log, net, im, fm),
-                generalization=pm4py.generalization_tbr(log, net, im, fm),
-                simplicity=pm4py.simplicity_petri_net(net, im, fm))
+def _nets(fold):
+    """Сеть состояний ``censor_aware`` (без места CENS) и Inductive Miner на обучающем журнале."""
+    return fold.cached("level1_nets", lambda: {
+        "state_net": fold.models["censor_aware"].to_pm4py(censoring=False),
+        "inductive": pm4py.discover_petri_net_inductive(to_pm4py_log(fold.train_log))})
 
 
-def level1(model, train_log, test_log, complete_ids):
-    """Сеть состояний модели (без места CENS) против Inductive Miner на обучающем журнале."""
-    nets = {"state_net": model.to_pm4py(censoring=False),
-            "inductive": pm4py.discover_petri_net_inductive(to_pm4py_log(train_log))}
-    return [dict(model=name, **conformance(net, im, fm, test_log, complete_ids))
-            for name, (net, im, fm) in nets.items()]
+def _test_log(fold):
+    return fold.cached("pm4py_test_log", lambda: to_pm4py_log(fold.test_log))
+
+
+def per_net(metric):
+    """``metric(net, im, fm, fold)`` → строки ``state_net`` и ``inductive``."""
+    @wraps(metric)
+    def wrapped(fold):
+        return [dict(model=name, **{metric.__name__: metric(net, im, fm, fold)})
+                for name, (net, im, fm) in _nets(fold).items()]
+    return wrapped
+
+
+@per_net
+def fitness_token(net, im, fm, fold):
+    """Token-based fitness; трассы, не дошедшие до терминала, — префиксы."""
+    log = _test_log(fold)
+    is_complete = log["case:concept:name"].isin(fold.complete_ids)
+    return prefix_fitness(log.loc[is_complete], log.loc[~is_complete], net, im, fm)
+
+
+@per_net
+def precision_token(net, im, fm, fold):
+    return pm4py.precision_token_based_replay(_test_log(fold), net, im, fm)
+
+
+@per_net
+def generalization(net, im, fm, fold):
+    return pm4py.generalization_tbr(_test_log(fold), net, im, fm)
+
+
+@per_net
+def simplicity(net, im, fm, fold):
+    return pm4py.simplicity_petri_net(net, im, fm)
+
+
+METRICS = {f.__name__: f for f in (fitness_token, precision_token, generalization, simplicity)}

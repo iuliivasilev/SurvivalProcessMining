@@ -1,88 +1,43 @@
-"""Кросс-валидация по трассам: k фолдов и набор метрик, который можно менять.
+"""Кросс-валидация по трассам: k фолдов и метрики, которые выбираются явно.
 
-Метрика — функция ``metric(fold)`` от :class:`Fold`; она возвращает строку (``dict``) или список
-строк. Строка с колонкой ``model`` относится к модели (``naive``, ``censor_aware`` или своей).
-Набор метрик меняется через :meth:`CrossValidator.set_metrics`::
+По умолчанию не считается ничего. Метрики добавляются через :meth:`CrossValidator.add_metrics`
+по одной (``"km_sup"``), уровнем (``"level3"``) или все сразу (``"all"``); там же добавляются свои::
 
     def median_days(model, fold):
         return float(np.median(model.completion_times(2000, fold.seed)))
 
-    cv = crossval.CrossValidator("A", "D").set_metrics(median=crossval.per_model(median_days), level2=None)
+    cv = crossval.CrossValidator("A", "D").add_metrics("level1", "uemsc", "ibs", median=crossval.per_model(median_days))
     results = cv.run(raw, censoring["end"], censoring["reason"])
-    crossval.summarize(results["median"])
-"""
-from dataclasses import dataclass
-from functools import wraps
-from numbers import Number
+    crossval.summarize(results["level3"])     # таблица уровня: только выбранные метрики (здесь ibs)
 
+Своя метрика — функция ``metric(fold)`` от :class:`Fold`; она возвращает строку (``dict``) или
+список строк и попадает в отдельную таблицу под своим именем. Строка с колонкой ``model``
+относится к модели (``naive``, ``censor_aware`` или своей).
+"""
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
 from ..log import intervals as make_intervals, prepare
 from ..model import CensoredStateNet
-from .process import level1
-from .stochastic import level2
-from .temporal import level3
+from . import likelihood, process, stochastic, temporal
+from .fold import Fold, per_model  # noqa: F401  (часть API crossval)
+
+LEVELS = {"level1": process.METRICS, "level2": stochastic.METRICS,
+          "level3": temporal.METRICS, "level4": likelihood.METRICS}
+METRICS = {name: metric for metrics in LEVELS.values() for name, metric in metrics.items()}
+"""Все встроенные метрики по имени, в порядке уровней."""
+LEVEL_OF = {name: level for level, metrics in LEVELS.items() for name in metrics}
 
 
-@dataclass
-class Fold:
-    """Всё, что известно метрике об одном фолде: обученные модели и обучающая/тестовая части."""
-    index: int
-    seed: int
-    n_sim: int
-    models: dict
-    train_log: pd.DataFrame
-    test_log: pd.DataFrame
-    train_cases: pd.DataFrame
-    test_cases: pd.DataFrame
-    train_intervals: pd.DataFrame
-    test_intervals: pd.DataFrame
-
-    @property
-    def complete_ids(self):
-        """Тестовые трассы, дошедшие до терминала."""
-        return self.test_cases.loc[self.test_cases["event"] == 1, "case_id"]
-
-
-def process_metrics(fold):
-    """Уровень 1: сеть состояний ``censor_aware`` против Inductive Miner."""
-    return level1(fold.models["censor_aware"], fold.train_log, fold.test_log, fold.complete_ids)
-
-
-def stochastic_metrics(fold):
-    """Уровень 2: entropic relevance, uEMSC, EMD языков."""
-    return level2(fold.models, fold.test_log, fold.n_sim, fold.seed)
-
-
-def temporal_metrics(fold):
-    """Уровень 3: temporal profile, расстояния журналов, KS по рёбрам, выживание."""
-    return level3(fold.models, fold.train_log, fold.test_log, fold.train_cases, fold.test_cases,
-                  fold.test_intervals, fold.n_sim, fold.seed)
-
-
-def likelihood_metrics(fold):
-    """Уровень 4: −log L тестовых интервалов и доля трасс с невиданными переходами."""
-    return [dict(model=name, **model.nll(fold.test_intervals)) for name, model in fold.models.items()]
-
-
-DEFAULT_METRICS = {"level1": process_metrics, "level2": stochastic_metrics,
-                   "level3": temporal_metrics, "level4": likelihood_metrics}
-
-
-def per_model(metric):
-    """Метрика ``metric(model, fold)`` для одной модели → метрика по всем моделям фолда.
-
-    ``metric`` возвращает число (колонка называется по имени функции) или ``dict`` колонок.
-    """
-    @wraps(metric)
-    def wrapped(fold):
-        rows = []
-        for name, model in fold.models.items():
-            value = metric(model, fold)
-            rows.append(dict(model=name, **({metric.__name__: value} if isinstance(value, Number) else value)))
-        return rows
-    return wrapped
+def _expand(name):
+    """``"all"``, уровень или имя метрики → имена встроенных метрик."""
+    if name == "all":
+        return list(METRICS)
+    if name in LEVELS:
+        return list(LEVELS[name])
+    if name in METRICS:
+        return [name]
+    raise ValueError(f"Неизвестная метрика {name!r}; есть 'all', {', '.join(LEVELS)}, {', '.join(METRICS)}")
 
 
 def trace_folds(cases, k=5, seed=2026):
@@ -95,26 +50,32 @@ def trace_folds(cases, k=5, seed=2026):
 class CrossValidator:
     """Наивная MLE (``naive``) и MLE с цензурой (``censor_aware``) на ``k`` фолдах.
 
-    По умолчанию считаются метрики ``level1 … level4`` (:data:`DEFAULT_METRICS`).
+    Метрик по умолчанию нет: их добавляет :meth:`add_metrics`.
     """
 
     def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000):
         self.start, self.terminal, self.k, self.seed = start, terminal, k, seed
         self.min_duration, self.n_sim = min_duration, n_sim
-        self.metrics = dict(DEFAULT_METRICS)
+        self.metrics = {}
 
-    def set_metrics(self, **metrics):
-        """Добавляет метрику под новым именем, заменяет под старым, убирает при значении ``None``.
-
-        Возвращает ``self``, поэтому вызовы можно сцеплять.
-        """
-        for name, metric in metrics.items():
-            if metric is None:
-                self.metrics.pop(name, None)
-            elif callable(metric):
-                self.metrics[name] = metric
-            else:
+    def add_metrics(self, *names, **custom):
+        """Встроенные метрики по имени, уровню (``"level1"`` … ``"level4"``) или все (``"all"``);
+        свои — ``имя=функция``. Возвращает ``self``, поэтому вызовы можно сцеплять."""
+        for name in names:
+            self.metrics.update((metric, METRICS[metric]) for metric in _expand(name))
+        for name, metric in custom.items():
+            if name == "all" or name in LEVELS or name in METRICS:
+                raise ValueError(f"Имя {name!r} занято встроенной метрикой или уровнем")
+            if not callable(metric):
                 raise TypeError(f"Метрика {name!r} должна быть функцией fold → строки, получено {type(metric).__name__}")
+            self.metrics[name] = metric
+        return self
+
+    def remove_metrics(self, *names):
+        """Убирает метрики: по имени (и своих), уровнем или все (``"all"``)."""
+        for name in names:
+            for metric in [name] if name in self.metrics and name not in METRICS else _expand(name):
+                self.metrics.pop(metric, None)
         return self
 
     def fit_models(self, train_intervals):
@@ -125,21 +86,32 @@ class CrossValidator:
                                                  families=naive.families_).fit(intervals=train_intervals)}
 
     def run(self, raw, observation_end=None, reason="lost", progress=print):
-        """Словарь ``имя метрики → таблица`` с колонкой ``fold``."""
+        """Словарь ``таблица → DataFrame`` с колонкой ``fold``: по таблице на уровень
+        (только выбранные метрики) и на каждую свою метрику."""
+        if not self.metrics:
+            raise ValueError("Метрики не выбраны: add_metrics('all'), add_metrics('level3'), add_metrics('km_sup') …")
         log, cases = prepare(raw, self.start, self.terminal, observation_end, reason)
         intervals = make_intervals(log, cases, self.min_duration)
+        builtin = [name for name in METRICS if name in self.metrics]
+        own = [name for name in self.metrics if name not in METRICS]
 
         def part(table, ids):
             return table.loc[table["case_id"].isin(ids)]
 
-        tables = {name: [] for name in self.metrics}
+        tables = {LEVEL_OF.get(name, name): [] for name in builtin + own}
         for index, (train_ids, test_ids) in enumerate(trace_folds(cases, self.k, self.seed)):
             train_intervals = part(intervals, train_ids)
             fold = Fold(index, self.seed + 1000 * index, self.n_sim, self.fit_models(train_intervals),
                         part(log, train_ids), part(log, test_ids), part(cases, train_ids), part(cases, test_ids),
                         train_intervals, part(intervals, test_ids))
-            for name, metric in self.metrics.items():
-                rows = metric(fold)
+            merged = {}  # встроенные метрики уровня сливаются в одну строку на модель
+            for name in builtin:
+                for row in self.metrics[name](fold):
+                    merged.setdefault(LEVEL_OF[name], {}).setdefault(row["model"], dict(fold=index)).update(row)
+            for level, rows in merged.items():
+                tables[level].extend(rows.values())
+            for name in own:
+                rows = self.metrics[name](fold)
                 tables[name].extend(dict(fold=index, **row) for row in ([rows] if isinstance(rows, dict) else rows))
             if progress:
                 progress(f"фолд {index + 1}/{self.k} готов")
@@ -147,9 +119,14 @@ class CrossValidator:
 
 
 def cross_validate(raw, start, terminal, observation_end=None, reason="lost", k=5, seed=2026,
-                   min_duration=1 / 1440, n_sim=5000, progress=print, metrics=None):
-    """Короткая форма :class:`CrossValidator`; ``metrics`` передаётся в :meth:`~CrossValidator.set_metrics`."""
-    validator = CrossValidator(start, terminal, k, seed, min_duration, n_sim).set_metrics(**(metrics or {}))
+                   min_duration=1 / 1440, n_sim=5000, progress=print, metrics="all"):
+    """Короткая форма :class:`CrossValidator`; ``metrics`` — имя, список имён или ``{имя: функция}``
+    для :meth:`~CrossValidator.add_metrics`."""
+    validator = CrossValidator(start, terminal, k, seed, min_duration, n_sim)
+    if isinstance(metrics, dict):
+        validator.add_metrics(**metrics)
+    else:
+        validator.add_metrics(*([metrics] if isinstance(metrics, str) else metrics))
     return validator.run(raw, observation_end, reason, progress)
 
 
