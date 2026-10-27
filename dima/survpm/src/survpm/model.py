@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 from . import adapters
+from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
 from .log import censoring_summary, intervals as make_intervals, prepare
@@ -67,10 +68,35 @@ class CensoredStateNet:
         """Время от ``start`` до ``terminal`` по симуляции без цензуры; ``inf`` — не дошла."""
         return completion_times(self.simulate(n, seed), self.terminal)
 
-    def survival(self, t, n=10_000, seed=0):
-        """``S(t) = P(T > t)`` для времени до ``terminal`` (симуляция)."""
+    def survival(self, t, n=10_000, seed=0, method="sim", step=None):
+        """``S(t) = P(T > t)`` для времени до ``terminal``.
+
+        ``method="sim"`` — доля из ``n`` симулированных трасс; ``method="grid"`` — свёртка со
+        сдвигом на сетке с шагом ``step`` дней (по умолчанию ``max(t) / 2000``), без случайности.
+        """
+        t = np.asarray(t, dtype=float)
+        if method == "grid":
+            times, states, F = self._grid(t.max(), step)
+            return 1 - np.interp(t, times, F[states.index(self.start)])
+        if method != "sim":
+            raise ValueError(method)
         times = np.sort(self.completion_times(n, seed))
-        return 1 - np.searchsorted(times, np.asarray(t, dtype=float), side="right") / len(times)
+        return 1 - np.searchsorted(times, t, side="right") / len(times)
+
+    def _grid(self, horizon, step=None):
+        return completion_cdf(self.edges_, self.terminal, horizon, step or horizon / 2000)
+
+    def state_curves(self, horizon, step=None):
+        """Кривые «из текущего места»: для каждого состояния ``s`` — ``F_s(t)`` и ``S_s(t)``,
+        время от входа в ``s`` до ``terminal`` (таблица ``state, time_days, cdf, survival``)."""
+        return curves_table(*self._grid(horizon, step))
+
+    def residual_survival(self, state, elapsed, t, step=None):
+        """``S(t | s, a)`` — остаток времени до ``terminal`` для идущего случая, который уже
+        ``elapsed`` дней находится в ``state``; ``t`` отсчитывается от текущего момента."""
+        t = np.asarray(t, dtype=float)
+        times, states, F = self._grid(t.max(), step)
+        return 1 - np.interp(t, times, residual_cdf(self.edges_, state, elapsed, times, states, F))
 
     def nll(self, intervals):
         """−log L интервалов с цензурой. Трассы с переходом или состоянием, которых нет в модели,

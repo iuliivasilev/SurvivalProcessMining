@@ -12,6 +12,7 @@
     model.edges_table()
 """
 from . import datasets
+from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
 from .log import censoring_summary, intervals, prepare, read_csv

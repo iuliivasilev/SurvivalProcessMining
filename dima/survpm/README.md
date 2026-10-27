@@ -28,7 +28,10 @@ raw = datasets.load_sepsis("../Med_Eremina/Sepsis Cases - Event Log_grouped.csv"
 model = survpm.CensoredStateNet("Registration", "Discharge").fit(raw)
 
 model.edges_table()                  # p, распределение, среднее, медиана, 90% квантиль
-model.survival([1, 7, 30])           # P(не выписан к дню t)
+model.survival([1, 7, 30])           # P(не выписан к дню t), симуляция
+model.survival([1, 7, 30], method="grid")      # то же свёрткой на сетке, без случайности
+model.state_curves(60)               # S_s(t) из каждого состояния до Discharge
+model.residual_survival("Admission", 2, [1, 7])  # остаток, если уже 2 дня в Admission
 model.simulate(1000, seed=0)         # трассы [(состояния, времена), ...]
 net, im, fm = model.to_pm4py()       # сеть Петри PM4Py с местом CENS
 ```
