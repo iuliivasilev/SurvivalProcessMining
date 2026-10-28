@@ -10,10 +10,12 @@
 
     raw, censoring = datasets.generate_ad(1000, seed=2026)
     raw = datasets.load_sepsis("Med_Eremina/Sepsis Cases - Event Log_grouped.csv")
+    log = datasets.load_sepsis_log("Med_Eremina/Sepsis Cases - Event Log_grouped.csv")  # с признаками
 """
 import numpy as np
 import pandas as pd
 
+from .features import read_log
 from .log import read_csv
 
 AD_START = "A"
@@ -102,3 +104,21 @@ SEPSIS_START, SEPSIS_TERMINAL = "Registration", "Discharge"
 def load_sepsis(path, state_column="event_group"):
     """Журнал Sepsis (``Med_Eremina/Sepsis Cases - Event Log_grouped.csv``); состояния — группы событий."""
     return read_csv(path, "case_id", state_column, "time:timestamp")
+
+
+SEPSIS_MEASUREMENTS = ["Examination"]
+SEPSIS_EXCLUDE = ["concept:name", "org:group", "lifecycle:transition"]
+
+
+def load_sepsis_log(path, state_column="event_group", measurement_activities=(), exclude=SEPSIS_EXCLUDE):
+    """Журнал Sepsis с признаками (:class:`survpm.features.EventLog`).
+
+    Признаки разбираются автоматически: Age, Diagnose и флаги SIRS/Diagnostic* — статические
+    (записаны в Registration), CRP, Leucocytes, LacticAcid — замеры. По умолчанию трассы не
+    упрощаются: Examination остаётся состоянием (как в :func:`load_sepsis`), а значения
+    анализов дополнительно попадают в ``measurements``.
+    ``measurement_activities=SEPSIS_MEASUREMENTS`` делает Examination «прозрачной»: анализы
+    только обновляют признаки и не считаются состоянием.
+    """
+    return read_log(path, "case_id", state_column, "time:timestamp",
+                    measurement_activities=measurement_activities, exclude=exclude)

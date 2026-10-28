@@ -53,9 +53,9 @@ class CrossValidator:
     Метрик по умолчанию нет: их добавляет :meth:`add_metrics`.
     """
 
-    def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000):
+    def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000, repeats="simultaneous"):
         self.start, self.terminal, self.k, self.seed = start, terminal, k, seed
-        self.min_duration, self.n_sim = min_duration, n_sim
+        self.min_duration, self.n_sim, self.repeats = min_duration, n_sim, repeats
         self.metrics = {}
 
     def add_metrics(self, *names, **custom):
@@ -90,7 +90,7 @@ class CrossValidator:
         (только выбранные метрики) и на каждую свою метрику."""
         if not self.metrics:
             raise ValueError("Метрики не выбраны: add_metrics('all'), add_metrics('level3'), add_metrics('km_sup') …")
-        log, cases = prepare(raw, self.start, self.terminal, observation_end, reason)
+        log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
         intervals = make_intervals(log, cases, self.min_duration)
         builtin = [name for name in METRICS if name in self.metrics]
         own = [name for name in self.metrics if name not in METRICS]
@@ -119,10 +119,10 @@ class CrossValidator:
 
 
 def cross_validate(raw, start, terminal, observation_end=None, reason="lost", k=5, seed=2026,
-                   min_duration=1 / 1440, n_sim=5000, progress=print, metrics="all"):
+                   min_duration=1 / 1440, n_sim=5000, progress=print, metrics="all", repeats="simultaneous"):
     """Короткая форма :class:`CrossValidator`; ``metrics`` — имя, список имён или ``{имя: функция}``
     для :meth:`~CrossValidator.add_metrics`."""
-    validator = CrossValidator(start, terminal, k, seed, min_duration, n_sim)
+    validator = CrossValidator(start, terminal, k, seed, min_duration, n_sim, repeats)
     if isinstance(metrics, dict):
         validator.add_metrics(**metrics)
     else:

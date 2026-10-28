@@ -23,7 +23,7 @@ def small_log():
 
 def test_prepare_cuts_collapses_and_censors(small_log):
     observation_end = pd.Series({"2": ts(10)})
-    log, cases = survpm.prepare(small_log, "A", "D", observation_end)
+    log, cases = survpm.prepare(small_log, "A", "D", observation_end, repeats="collapse")
     assert set(cases.case_id) == {"1", "2"}  # у трассы 3 нет A
     assert log.loc[log.case_id == "1", "activity"].tolist() == ["A", "B", "D"]  # повтор A схлопнут, после D обрезано
     assert log.loc[log.case_id == "2", "activity"].tolist() == ["A", "B"]  # X до A отброшен
@@ -36,6 +36,16 @@ def test_prepare_cuts_collapses_and_censors(small_log):
     assert one.duration.tolist() == pytest.approx([2, 3])  # вход в A — первое событие серии
     censored = intervals[~intervals.observed]
     assert censored.src.tolist() == ["B"] and censored.duration.tolist() == pytest.approx([7])
+
+
+def test_prepare_repeats(small_log):
+    same_time = pd.concat([small_log, pd.DataFrame([dict(case_id="1", activity="B", timestamp=ts(2))])])
+    states = lambda repeats: survpm.prepare(same_time, "A", "D", repeats=repeats)[0].query("case_id == '1'")["activity"].tolist()
+    assert states("collapse") == ["A", "B", "D"]
+    assert states("simultaneous") == ["A", "A", "B", "D"]  # A в дни 0 и 1 — повтор, два B в день 2 — один заход
+    assert states("keep") == ["A", "A", "B", "B", "D"]
+    with pytest.raises(ValueError):
+        survpm.prepare(small_log, "A", "D", repeats="merge")
 
 
 def test_censoring_lengthens_exponential_mean():
@@ -95,3 +105,14 @@ def test_pm4py_replay_puts_token_in_cens(ad_model):
     net, im, fm = ad_model.to_pm4py()
     marking = adapters.replay_censored(net, im, ["A", "B"], reason="lost")
     assert [p.name for p, n in marking.items() if n] == [adapters.CENSORED]
+
+
+def test_repeat_table():
+    model = survpm.CensoredStateNet("A", "D")
+    model.edges_ = [dict(src="A", dst="A", p=.5), dict(src="A", dst="B", p=.5),
+                    dict(src="B", dst="A", p=.2), dict(src="B", dst="D", p=.8)]
+    table = model.repeat_table().set_index("state")
+    assert table.loc["A", "p_immediate"] == pytest.approx(.5)
+    assert table.loc["A", "p_return"] == pytest.approx(.5 + .5 * .2)
+    assert table.loc["B", "p_return"] == pytest.approx(.2)  # из A в B попадаем наверняка
+    assert table.loc["A", "expected_visits"] == pytest.approx(1 / .4)

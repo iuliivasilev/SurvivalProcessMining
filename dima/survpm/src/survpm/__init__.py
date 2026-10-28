@@ -11,10 +11,11 @@
     model = survpm.CensoredStateNet("Registration", "Discharge").fit(raw)
     model.edges_table()
 """
-from . import datasets
+from . import datasets, features
 from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
+from .features import EventLog, read_log
 from .log import censoring_summary, intervals, prepare, read_csv
 from .model import CensoredStateNet
 from .simulation import completion_times, simulate, traces_to_log

@@ -6,6 +6,7 @@ from . import adapters
 from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
+from .features import EventLog
 from .log import censoring_summary, intervals as make_intervals, prepare
 from .simulation import completion_times, simulate
 
@@ -15,7 +16,8 @@ class CensoredStateNet:
 
     ``use_censoring=False`` — наивная оценка только по завершённым интервалам.
     ``families`` — словарь ``(src, dst) → семейство``; если не задан, выбирается по AIC
-    из ``candidates``.
+    из ``candidates``. ``repeats`` — что делать с повторами состояния подряд, см. :func:`prepare`
+    (``"collapse"`` воспроизводит результаты до 28.10.2026).
 
     Пример::
 
@@ -25,20 +27,25 @@ class CensoredStateNet:
     """
 
     def __init__(self, start, terminal, use_censoring=True, families=None, candidates=CANDIDATE_FAMILIES,
-                 min_duration=1 / 1440):
-        self.start, self.terminal = start, terminal
+                 min_duration=1 / 1440, repeats="simultaneous"):
+        self.start, self.terminal, self.repeats = start, terminal, repeats
         self.use_censoring, self.families = use_censoring, families
         self.candidates, self.min_duration = candidates, min_duration
 
     def fit(self, raw=None, observation_end=None, reason="lost", *, intervals=None):
-        """Оценка по журналу ``raw`` (``case_id, activity, timestamp``) или по готовым интервалам.
+        """Оценка по журналу ``raw`` (``case_id, activity, timestamp`` или :class:`EventLog`)
+        или по готовым интервалам. У ``EventLog`` по умолчанию ``observation_end = raw.last_seen``.
 
         ``observation_end`` — момент окончания наблюдения незавершённых трасс (Series по ``case_id``);
         без него цензура наступает в момент последней записи трассы. ``reason`` — причина цензуры
         (строка или Series по ``case_id``).
         """
+        if isinstance(raw, EventLog):
+            seen = raw.last_seen if observation_end is None else \
+                pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
+            raw, observation_end = raw.events, seen
         if intervals is None:
-            log, cases = prepare(raw, self.start, self.terminal, observation_end, reason)
+            log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
             intervals = make_intervals(log, cases, self.min_duration)
         self.intervals_ = intervals
         self.families_, self.aic_table_ = select_families(intervals, self.candidates)
@@ -57,6 +64,36 @@ class CensoredStateNet:
                              distribution=dist_str(edge["dist"]), n_completed=edge["n_completed"],
                              mean_days=mean_time(edge["dist"]), median_days=rv.median(*args, **kwargs),
                              q90_days=rv.ppf(.9, *args, **kwargs)))
+        return pd.DataFrame(rows)
+
+    def repeat_table(self):
+        """Вероятность повтора для каждого состояния (по вероятностям выбора, без времени и цензуры).
+
+        ``p_immediate`` — следующее состояние то же самое (петля ``s → s``);
+        ``p_return`` — состояние ещё встретится до ``terminal`` (сразу или через другие);
+        ``expected_visits`` — среднее число заходов при одном заходе на старте, ``1 / (1 − p_return)``.
+        """
+        states = sorted({e["src"] for e in self.edges_} | {e["dst"] for e in self.edges_})
+        index = {s: i for i, s in enumerate(states)}
+        P = np.zeros((len(states), len(states)))
+        for e in self.edges_:
+            if e["src"] != self.terminal:
+                P[index[e["src"]], index[e["dst"]]] += e["p"]
+        P /= np.where(P.sum(1, keepdims=True) > 0, P.sum(1, keepdims=True), 1)
+        rows = []
+        for s in states:
+            if s == self.terminal:
+                continue
+            i = index[s]
+            # h[d] — вероятность из d попасть в s раньше, чем в terminal или тупик
+            free = [j for j in range(len(states)) if j != i and states[j] != self.terminal]
+            A = np.eye(len(free)) - P[np.ix_(free, free)]
+            h = np.zeros(len(states))
+            h[i] = 1.
+            h[free] = np.linalg.solve(A, P[free, i])
+            p_return = float(P[i] @ h)
+            rows.append(dict(state=s, p_immediate=P[i, i], p_return=p_return,
+                             expected_visits=1 / (1 - p_return) if p_return < 1 else np.inf))
         return pd.DataFrame(rows)
 
     def simulate(self, n, seed=None, censoring=False, horizon=None):

@@ -1,0 +1,5 @@
+src,exits,n,logL_const,logL_x,gain
+Admission,"Admission (16%), Discharge (11%), Examination (71%), Treatment (2%)",1285,-0.8599661589593164,-0.8784437912721866,-0.01847763231287029
+Examination,"Admission (14%), Discharge (18%), Examination (48%), Treatment (20%)",3565,-1.254952011454977,-1.191922030467101,0.06302998098787597
+Registration,"Admission (1%), Examination (75%), Treatment (25%)",1014,-0.5986289205777595,-0.5653785669129519,0.03325035366480773
+Treatment,"Admission (42%), Discharge (0%), Examination (20%), Treatment (37%)",1411,-1.0812689201275856,-0.8079845431403566,0.273284376987229

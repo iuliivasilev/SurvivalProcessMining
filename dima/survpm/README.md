@@ -44,6 +44,39 @@ net, im, fm = model.to_pm4py()       # сеть Петри PM4Py с местом
 
 Наивная оценка только по завершённым интервалам: `CensoredStateNet(..., use_censoring=False)`.
 
+Повторы состояния подряд (`repeats`, есть у `prepare`, `CensoredStateNet` и `CrossValidator`):
+`"simultaneous"` (по умолчанию) склеивает только записи в один момент, поздние повторы дают петлю
+`s → s`; `"collapse"` склеивает всю серию, как до 28.10.2026; `"keep"` не склеивает ничего.
+Вероятность повтора каждого состояния — `model.repeat_table()` (`p_immediate`, `p_return`,
+`expected_visits`).
+
+## Признаки
+
+Журнал с признаками — `survpm.EventLog` из трёх таблиц: `events` (`case_id, activity, timestamp`,
+по ним строится сеть), `cases` (статические признаки, индекс `case_id`) и `measurements`
+(`case_id, timestamp, feature, value` — значения, меняющиеся во времени). Формат не привязан к
+медицине: подходит любая широкая таблица событий, где признаки — колонки.
+
+```python
+log = survpm.read_log(path, case_id="case", activity="act", timestamp="time")
+# measurement_activities=["Lab"] — строки Lab станут только замерами, не состояниями (по умолчанию трассы полные)
+log.static, log.dynamic             # разобраны автоматически; можно задать static=[...], dynamic=[...]
+model = survpm.CensoredStateNet("A", "D").fit(log)    # цензура не раньше log.last_seen
+
+X = survpm.features.at_entry(model.intervals_, log, window="1D")  # признаки на вход в состояние
+pieces = survpm.features.split(model.intervals_, log)            # куски между замерами (counting process)
+```
+
+Статический признак — колонка, у которой в каждой трассе не больше одного значения; значение берётся
+первое непустое. Динамический — каждое непустое значение становится замером в момент события.
+`at_entry` даёт последнее значение не позже входа (`f`), его давность в днях (`f_age`), число замеров
+(`f_n`) и, с `window`, число замеров за окно. Значения из будущего не используются.
+Строки `да/нет`, `true/false` становятся 1/0, числа — числами, остальное — категориями.
+
+Sepsis с признаками: `datasets.load_sepsis_log(path)` — трассы полные, Examination остаётся состоянием,
+значения анализов дополнительно в `measurements`; `measurement_activities=datasets.SEPSIS_MEASUREMENTS`
+делает Examination прозрачной. Проверка — `features_sepsis.ipynb`.
+
 ## Метрики и кросс-валидация
 
 По умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —

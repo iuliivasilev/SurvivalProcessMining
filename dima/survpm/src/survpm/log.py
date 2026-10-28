@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 COLUMNS = ["case_id", "activity", "timestamp"]
+REPEATS = ("simultaneous", "collapse", "keep")
 DAY = pd.Timedelta(1, unit="D")
 
 
@@ -25,15 +26,24 @@ def read_csv(path, case_id, activity, timestamp, sep=","):
     return raw
 
 
-def prepare(raw, start, terminal, observation_end=None, reason="lost"):
+def prepare(raw, start, terminal, observation_end=None, reason="lost", repeats="simultaneous"):
     """Журнал входов в состояния и таблица трасс.
 
     Трасса начинается с первого ``start`` (трассы без него отбрасываются) и обрезается после
-    первого ``terminal``; подряд идущие повторы состояния схлопываются, время входа — первое
-    событие серии. ``cases``: ``case_id, entry, end, event, reason, last_state, duration``.
+    первого ``terminal``. Подряд идущие повторы состояния (``repeats``):
+
+    - ``"simultaneous"`` — склеиваются только записи в один и тот же момент (несколько анализов
+      одного забора); повтор позже остаётся отдельным заходом и даёт петлю ``s → s``;
+    - ``"collapse"`` — схлопывается вся серия, время входа — первое событие серии (как в версиях
+      до 28.10.2026);
+    - ``"keep"`` — ничего не склеивается.
+
+    ``cases``: ``case_id, entry, end, event, reason, last_state, duration``.
     Конец незавершённой трассы — ``observation_end[case_id]`` (Series), если задан,
     иначе её последняя запись. ``reason`` — причина цензуры: строка или Series по ``case_id``.
     """
+    if repeats not in REPEATS:
+        raise ValueError(f"repeats={repeats!r}; допустимо: {REPEATS}")
     raw = raw.sort_values(["case_id", "timestamp"], kind="stable")
     parts, case_rows = [], []
     for case_id, group in raw.groupby("case_id", sort=False):
@@ -49,7 +59,13 @@ def prepare(raw, start, terminal, observation_end=None, reason="lost"):
         end = group["timestamp"].iloc[-1]
         if not event and observation_end is not None and case_id in observation_end.index:
             end = max(end, observation_end[case_id])
-        parts.append(group.iloc[np.flatnonzero(np.r_[True, activities[1:] != activities[:-1]])])
+        new_state = activities[1:] != activities[:-1]
+        if repeats == "simultaneous":
+            times = group["timestamp"].to_numpy()
+            new_state |= times[1:] != times[:-1]
+        elif repeats == "keep":
+            new_state[:] = True
+        parts.append(group.iloc[np.flatnonzero(np.r_[True, new_state])])
         case_reason = reason.get(case_id, "lost") if isinstance(reason, pd.Series) else reason
         case_rows.append(dict(case_id=case_id, entry=group["timestamp"].iloc[0], end=end, event=int(event),
                               reason="" if event else case_reason, last_state=activities[-1]))
@@ -62,26 +78,27 @@ def prepare(raw, start, terminal, observation_end=None, reason="lost"):
 
 
 def intervals(log, cases, min_duration=1 / 1440):
-    """Интервалы ``case_id, src, dst, duration, observed, reason`` по журналу из :func:`prepare`.
+    """Интервалы ``case_id, src, dst, duration, observed, reason, enter`` по журналу из :func:`prepare`.
 
     Соседние состояния дают завершённый интервал. Незавершённая трасса добавляет
     цензурированное ожидание в последнем состоянии (``dst=None``, ``observed=False``)
     от входа в него до ``cases.end``. Длительности меньше ``min_duration`` (одинаковые
     timestamp) заменяются на ``min_duration``: плотности lognormal, gamma, weibull в нуле
-    не определены.
+    не определены. ``enter`` — момент входа в ``src`` (по нему присоединяются признаки).
     """
     case = log["case_id"]
     following = log.groupby(case, sort=False)
     nxt = following["activity"].shift(-1)
     gap = (following["timestamp"].shift(-1) - log["timestamp"]) / DAY
     completed = pd.DataFrame(dict(case_id=case, src=log["activity"], dst=nxt, duration=gap,
-                                  observed=True, reason=""))[nxt.notna()]
+                                  observed=True, reason="", enter=log["timestamp"]))[nxt.notna()]
     last = log.loc[following.cumcount(ascending=False) == 0].set_index("case_id")
     open_cases = cases.loc[cases["event"] == 0].set_index("case_id")
     censored = pd.DataFrame(dict(case_id=open_cases.index, src=last.loc[open_cases.index, "activity"].to_numpy(),
                                  dst=None,
                                  duration=((open_cases["end"] - last.loc[open_cases.index, "timestamp"]) / DAY).to_numpy(),
-                                 observed=False, reason=open_cases["reason"].to_numpy()))
+                                 observed=False, reason=open_cases["reason"].to_numpy(),
+                                 enter=last.loc[open_cases.index, "timestamp"].array))
     result = pd.concat([completed, censored], ignore_index=True)
     result["duration"] = result["duration"].astype(float).clip(lower=min_duration)
     order = {c: i for i, c in enumerate(cases["case_id"])}
