@@ -19,25 +19,8 @@ from sklearn.model_selection import StratifiedKFold
 
 from ..log import intervals as make_intervals, prepare
 from ..model import CensoredStateNet
-from . import likelihood, process, stochastic, temporal
 from .fold import Fold, per_model  # noqa: F401  (часть API crossval)
-
-LEVELS = {"level1": process.METRICS, "level2": stochastic.METRICS,
-          "level3": temporal.METRICS, "level4": likelihood.METRICS}
-METRICS = {name: metric for metrics in LEVELS.values() for name, metric in metrics.items()}
-"""Все встроенные метрики по имени, в порядке уровней."""
-LEVEL_OF = {name: level for level, metrics in LEVELS.items() for name in metrics}
-
-
-def _expand(name):
-    """``"all"``, уровень или имя метрики → имена встроенных метрик."""
-    if name == "all":
-        return list(METRICS)
-    if name in LEVELS:
-        return list(LEVELS[name])
-    if name in METRICS:
-        return [name]
-    raise ValueError(f"Неизвестная метрика {name!r}; есть 'all', {', '.join(LEVELS)}, {', '.join(METRICS)}")
+from .registry import LEVELS, METRICS, LEVEL_OF, _expand
 
 
 def trace_folds(cases, k=5, seed=2026):

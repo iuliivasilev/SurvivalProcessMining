@@ -79,7 +79,40 @@ Sepsis с признаками: `datasets.load_sepsis_log(path)` — трасс�
 
 ## Метрики и кросс-валидация
 
-По умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —
+### Метрики одной обученной модели
+
+`evaluate` оценивает модель на переданном тестовом журнале без переобучения:
+
+```python
+train, train_censoring = datasets.generate_ad(500, seed=1)
+test, test_censoring = datasets.generate_ad(200, seed=2)
+model = survpm.CensoredStateNet("A", "D").fit(train, train_censoring["end"])
+
+results = model.evaluate(test, observation_end=test_censoring["end"])
+results["level4"]  # unseen_share, nll_per_interval, nll_per_trace
+
+# Отдельные метрики, уровни или "all"; для уровней 1–3 нужны дополнительные зависимости.
+results = model.evaluate(test, metrics=["fitness_token", "km_sup", "level4"],
+                         observation_end=test_censoring["end"], n_sim=5000, seed=2026)
+```
+
+Возвращается словарь таблиц по уровням с колонкой `model="model"`, без колонки `fold`.
+`temporal_deviation_share` дополнительно возвращает базовую линию `train_log`.
+Уровень 1 оценивает только сеть этой модели; сравнение с Inductive Miner выполняется в CV.
+Принимаются DataFrame и `EventLog`; используются те же настройки повторов и минимальной
+длительности, что при обучении. У `EventLog` время наблюдения учитывает также измерения.
+По умолчанию считается только `level4`, которому достаточно зависимостей ядра. Зависимости
+других уровней загружаются при вычислении выбранных метрик.
+Если все тестовые трассы неизвестны модели, `unseen_share=1`, а значения NLL — `NaN`.
+
+При `fit(raw)` модель сохраняет подготовленный обучающий журнал в `log_` и таблицу трасс
+в `cases_`. Они нужны для `ibs` (обучающая оценка цензуры) и `temporal_deviation_share`
+(обучающий временной профиль). После `fit(intervals=...)` эти две метрики недоступны;
+остальные можно считать. Тестовые данные не используются для восстановления обучения.
+
+### Кросс-валидация
+
+У `CrossValidator` по умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —
 по одной, уровнем или все сразу.
 
 ```python

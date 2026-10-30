@@ -17,6 +17,8 @@ from ..adapters import to_pm4py_log
 
 def _replay_sums(log, net, im, fm):
     """Суммы ``missing, consumed, remaining, produced`` token replay по журналу PM4Py."""
+    if not len(log):
+        return np.zeros(4)
     replay = token_replay.apply(pm4py.convert_to_event_log(log), net, im, fm)
     return np.array([[r["missing_tokens"], r["consumed_tokens"], r["remaining_tokens"], r["produced_tokens"]]
                      for r in replay], dtype=float).sum(axis=0)

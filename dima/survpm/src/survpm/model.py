@@ -44,6 +44,7 @@ class CensoredStateNet:
             seen = raw.last_seen if observation_end is None else \
                 pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
             raw, observation_end = raw.events, seen
+        log, cases = None, None
         if intervals is None:
             log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
             intervals = make_intervals(log, cases, self.min_duration)
@@ -53,6 +54,7 @@ class CensoredStateNet:
             self.families_.update(self.families)
         self.edges_, self.diagnostics_ = estimate_network(intervals, self.families_, self.use_censoring)
         self.stop_ = censoring_summary(intervals).set_index("src")["q_censored"].to_dict()
+        self.log_, self.cases_ = log, cases
         return self
 
     def edges_table(self):
@@ -150,11 +152,53 @@ class CensoredStateNet:
             out = [edge for edge in edges if edge[0] == src]
             nll += source_nll(group, out, [edges[e]["p"] for e in out], [edges[e]["dist"] for e in out])
         return dict(unseen_share=len(unseen_cases) / intervals["case_id"].nunique(),
-                    nll_per_interval=nll / len(kept), nll_per_trace=nll / kept["case_id"].nunique())
+                    nll_per_interval=nll / len(kept) if len(kept) else np.nan,
+                    nll_per_trace=nll / kept["case_id"].nunique() if len(kept) else np.nan)
 
     def score(self, intervals):
         """Средний log L на интервал (больше — лучше), как ``score`` в sklearn."""
         return -self.nll(intervals)["nll_per_interval"]
+
+    def evaluate(self, raw, metrics="level4", observation_end=None, reason="lost", *, n_sim=5000, seed=2026):
+        """Метрики обученной модели на журнале ``raw`` (DataFrame или :class:`EventLog`).
+
+        ``metrics`` — имя, список имён, ``"level1"`` … ``"level4"`` или ``"all"``.
+        По умолчанию — NLL и доля неизвестных трасс, без дополнительных зависимостей.
+        Возвращает ``{уровень: DataFrame}``, без переобучения и кросс-валидации.
+        Уровень 1 оценивает только эту сеть, без сравнения с Inductive Miner.
+        ``ibs`` и ``temporal_deviation_share`` требуют обучения через ``fit(raw)``,
+        чтобы сохранить обучающий журнал и таблицу исходов. Остальные метрики доступны
+        и после ``fit(intervals=...)``. ``n_sim`` и ``seed`` управляют симуляцией для метрик.
+        """
+        from .metrics.fold import Fold
+        from .metrics.registry import LEVEL_OF, METRICS, _expand
+
+        if not hasattr(self, "edges_"):
+            raise ValueError("Сначала обучите модель: fit(raw) или fit(intervals=...)")
+        names = [metrics] if isinstance(metrics, str) else list(metrics)
+        selected = dict.fromkeys(metric for name in names for metric in _expand(name))
+        if not selected:
+            raise ValueError("Метрики не выбраны: укажите имя, уровень или 'all'")
+        needs_training = {"ibs", "temporal_deviation_share"}.intersection(selected)
+        if needs_training and self.log_ is None:
+            raise ValueError(f"Метрики {', '.join(sorted(needs_training))} требуют fit(raw), а не fit(intervals=...)")
+        if isinstance(raw, EventLog):
+            seen = raw.last_seen if observation_end is None else \
+                pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
+            raw, observation_end = raw.events, seen
+        log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
+        test_intervals = make_intervals(log, cases, self.min_duration)
+        fold = Fold(0, seed, n_sim, {"model": self}, self.log_, log, self.cases_, cases,
+                    self.intervals_, test_intervals)
+        if any(LEVEL_OF[name] == "level1" for name in selected):
+            # Метрики process переиспользуют сеть; сравнение с Inductive Miner остаётся в CV.
+            fold.cache["level1_nets"] = {"model": self.to_pm4py(censoring=False)}
+        tables = {}
+        for name in selected:
+            rows = tables.setdefault(LEVEL_OF[name], {})
+            for row in METRICS[name](fold):
+                rows.setdefault(row["model"], {}).update(row)
+        return {level: pd.DataFrame(list(rows.values())) for level, rows in tables.items()}
 
     def to_pm4py(self, censoring=True):
         """``(net, initial_marking, final_marking)`` PM4Py; ``censoring=False`` — без места ``CENS``."""
