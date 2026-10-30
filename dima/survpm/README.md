@@ -77,6 +77,51 @@ Sepsis с признаками: `datasets.load_sepsis_log(path)` — трасс�
 значения анализов дополнительно в `measurements`; `measurement_activities=datasets.SEPSIS_MEASUREMENTS`
 делает Examination прозрачной. Проверка — `features_sepsis.ipynb`.
 
+### Обучение с признаками
+
+Признаки включаются явно; без `feature_columns` сохраняется прежняя модель.
+
+```python
+model = survpm.CensoredStateNet(
+    "Registration", "Discharge",
+    feature_columns=["Age", "CRP", "CRP_age", "history_visits"],
+    l2=1.0,
+).fit(train_log)                       # EventLog, отдельный от test_log
+model.coefficients_table()             # коэффициенты для стандартизованных признаков
+model.evaluate(test_log)["level4"]     # индивидуальный likelihood с цензурой
+
+profile = model.for_features({"Age": 65, "CRP": 30, "CRP_age": 0.5, "history_visits": 1})
+profile.edges_table()
+profile.survival([1, 7, 30], method="grid")
+profile.simulate(100, seed=0)
+```
+
+`features.at_entry` берёт значения на входе. Дополнительно доступны `history_visits`
+(номер посещения текущего состояния, начиная с 1) и `history_elapsed_days` (дни от начала трассы).
+`feature_window="1D"` включает оконные признаки, например `CRP_n_1D`. Можно передать готовые
+признаки: `fit(intervals=intervals, X=frame)`, `nll(test_intervals, X=test_frame)`;
+индексы X и интервалов должны совпадать.
+
+Оценка совместная: `p_sd(X) = softmax(alpha_sd + beta_sd·X)`,
+`T_sd(X) = exp(gamma_sd·X) T_sd(0)`. У цензуры суммируется `p_sd(X) S_sd(c | X)`
+по скрытым выходам. Поддерживаются exponential, lognormal, gamma и weibull, без uniform.
+Медианы пропусков, индикаторы, one-hot и стандартизация оцениваются только на обучении;
+неизвестная категория при прогнозе кодируется как базовая. Постоянные колонки удаляются.
+`l2` штрафует коэффициенты признаков, но не базовые параметры. В таблице коэффициентов
+положительный `time` означает растяжение времени; `choice` задан относительно последнего
+по алфавиту выхода состояния. Базовые `edges_` относятся к нулю закодированных признаков.
+
+`for_features` возвращает копию с **фиксированным сценарием во всех будущих состояниях**.
+Будущие анализы, история и признаки не обновляются автоматически. Время ожидания внутри
+состояния учитывается через `profile.residual_survival(...)`, но новые измерения внутри
+ожидания пока не входят в обучение. Без профиля вероятностные прогнозы и экспорт отклоняются.
+
+CV с признаками: `CrossValidator(..., feature_columns=[...]).add_metrics("level4").run(log)`.
+Он принимает EventLog и обучает кодирование отдельно в каждом фолде. Для модели с признаками
+сейчас реализована индивидуальная оценка level4; остальные уровни требуют явного сценария:
+`profile.evaluate(test_log, metrics=...)`. Это оценка фиксированного сценария, а не
+персонализированная оценка всей тестовой популяции.
+
 ## Метрики и кросс-валидация
 
 ### Метрики одной обученной модели

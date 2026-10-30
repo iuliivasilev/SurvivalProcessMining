@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from . import adapters
+from . import adapters, covariates, features
 from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
@@ -19,6 +19,10 @@ class CensoredStateNet:
     из ``candidates``. ``repeats`` — что делать с повторами состояния подряд, см. :func:`prepare`
     (``"collapse"`` воспроизводит результаты до 28.10.2026).
 
+    ``feature_columns`` включает softmax/AFT по признакам на входе в состояние.
+    Для обучения передайте EventLog или ``fit(intervals=..., X=...)``. ``feature_window``
+    задаёт окно для счётчиков замеров; ``l2`` — штраф коэффициентов признаков.
+
     Пример::
 
         model = CensoredStateNet("Registration", "Discharge").fit(raw)
@@ -27,19 +31,30 @@ class CensoredStateNet:
     """
 
     def __init__(self, start, terminal, use_censoring=True, families=None, candidates=CANDIDATE_FAMILIES,
-                 min_duration=1 / 1440, repeats="simultaneous"):
+                 min_duration=1 / 1440, repeats="simultaneous", *, feature_columns=None, feature_window=None, l2=1.):
         self.start, self.terminal, self.repeats = start, terminal, repeats
         self.use_censoring, self.families = use_censoring, families
         self.candidates, self.min_duration = candidates, min_duration
+        self.feature_columns = list(feature_columns) if feature_columns else []
+        reserved = {"case_id", "src", "dst", "duration", "observed", "reason", "enter"}.intersection(self.feature_columns)
+        if reserved:
+            raise ValueError(f"Имена признаков совпадают с полями интервалов: {sorted(reserved)}")
+        self.feature_window, self.l2 = feature_window, l2
+        if l2 < 0:
+            raise ValueError("l2 должен быть неотрицательным")
 
-    def fit(self, raw=None, observation_end=None, reason="lost", *, intervals=None):
+    def fit(self, raw=None, observation_end=None, reason="lost", *, intervals=None, X=None):
         """Оценка по журналу ``raw`` (``case_id, activity, timestamp`` или :class:`EventLog`)
         или по готовым интервалам. У ``EventLog`` по умолчанию ``observation_end = raw.last_seen``.
 
         ``observation_end`` — момент окончания наблюдения незавершённых трасс (Series по ``case_id``);
         без него цензура наступает в момент последней записи трассы. ``reason`` — причина цензуры
         (строка или Series по ``case_id``).
+
+        При ``feature_columns`` признаки извлекаются из EventLog на входе; готовый X
+        должен содержать выбранные колонки и иметь тот же индекс, что интервалы.
         """
+        event_log = raw if isinstance(raw, EventLog) else None
         if isinstance(raw, EventLog):
             seen = raw.last_seen if observation_end is None else \
                 pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
@@ -48,17 +63,74 @@ class CensoredStateNet:
         if intervals is None:
             log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
             intervals = make_intervals(log, cases, self.min_duration)
+        if self.feature_columns:
+            frame = self._feature_frame(intervals, event_log, X)
+            self.encoder_ = covariates.FeatureEncoder().fit(frame)
+            design = self.encoder_.transform(frame)
+            intervals = intervals.copy()
+            intervals[self.feature_columns] = frame
         self.intervals_ = intervals
         self.families_, self.aic_table_ = select_families(intervals, self.candidates)
         if self.families:
             self.families_.update(self.families)
-        self.edges_, self.diagnostics_ = estimate_network(intervals, self.families_, self.use_censoring)
+        if self.feature_columns:
+            rows, diagnostics = [], []
+            for _, positions in intervals.groupby("src", sort=True).indices.items():
+                edges, diagnostic = covariates.fit_source(intervals.iloc[positions], self.families_,
+                                                          design[positions], self.use_censoring, self.l2)
+                rows.extend(edges)
+                diagnostics.append(diagnostic)
+            self.edges_, self.diagnostics_ = rows, pd.DataFrame(diagnostics)
+        else:
+            self.edges_, self.diagnostics_ = estimate_network(intervals, self.families_, self.use_censoring)
         self.stop_ = censoring_summary(intervals).set_index("src")["q_censored"].to_dict()
         self.log_, self.cases_ = log, cases
         return self
 
+    def _feature_frame(self, intervals, log=None, X=None):
+        if X is not None:
+            if not X.index.equals(intervals.index):
+                raise ValueError("Индекс X должен совпадать с индексом intervals")
+            frame = X
+        elif all(c in intervals for c in self.feature_columns):
+            frame = intervals
+        else:
+            frame = features.at_entry(intervals, log, window=self.feature_window) if log is not None else pd.DataFrame(index=intervals.index)
+            frame["history_visits"] = intervals.groupby(["case_id", "src"], sort=False).cumcount() + 1
+            frame["history_elapsed_days"] = (intervals["enter"] - intervals.groupby("case_id")["enter"].transform("min")) / pd.Timedelta(days=1)
+        missing = set(self.feature_columns) - set(frame.columns)
+        if missing:
+            raise ValueError(f"Нужен EventLog или X с признаками: {sorted(missing)}")
+        return frame[self.feature_columns].copy()
+
+    def _require_profile(self):
+        if self.feature_columns:
+            raise ValueError("Для прогноза задайте профиль: model.for_features({...})")
+
+    def for_features(self, values):
+        """Модель сценария с фиксированным профилем во всех будущих состояниях.
+
+        Возвращает копию; будущие анализы и история автоматически не обновляются.
+        ``values`` — словарь всех выбранных признаков в исходных единицах.
+        """
+        from copy import copy
+        if not self.feature_columns:
+            return copy(self)
+        design = self.encoder_.transform(pd.DataFrame([values]))
+        result = copy(self)
+        result.edges_ = covariates.condition_edges(self.edges_, design)
+        result.feature_columns = []
+        return result
+
+    def coefficients_table(self):
+        """Коэффициенты softmax и AFT для стандартизованных закодированных признаков."""
+        return pd.DataFrame([dict(transition=e["name"], feature=f, choice=b, time=g)
+                             for e in self.edges_ for f, b, g in
+                             zip(self.encoder_.names_, e["choice_coef"], e["time_coef"])])
+
     def edges_table(self):
         """Оценённые переходы: вероятность выбора, распределение, среднее, медиана, 90% квантиль."""
+        self._require_profile()
         rows = []
         for edge in self.edges_:
             rv, args, kwargs = scipy_args(edge["dist"])
@@ -75,6 +147,7 @@ class CensoredStateNet:
         ``p_return`` — состояние ещё встретится до ``terminal`` (сразу или через другие);
         ``expected_visits`` — среднее число заходов при одном заходе на старте, ``1 / (1 − p_return)``.
         """
+        self._require_profile()
         states = sorted({e["src"] for e in self.edges_} | {e["dst"] for e in self.edges_})
         index = {s: i for i, s in enumerate(states)}
         P = np.zeros((len(states), len(states)))
@@ -100,6 +173,7 @@ class CensoredStateNet:
 
     def simulate(self, n, seed=None, censoring=False, horizon=None):
         """Трассы ``[(states, times), ...]``; ``censoring=True`` — обрыв с наблюдаемой вероятностью ``q``."""
+        self._require_profile()
         return simulate(self.edges_, self.start, self.terminal, n, seed,
                         stop=self.stop_ if censoring else None, horizon=horizon)
 
@@ -123,6 +197,7 @@ class CensoredStateNet:
         return 1 - np.searchsorted(times, t, side="right") / len(times)
 
     def _grid(self, horizon, step=None):
+        self._require_profile()
         return completion_cdf(self.edges_, self.terminal, horizon, step or horizon / 2000)
 
     def state_curves(self, horizon, step=None):
@@ -137,7 +212,7 @@ class CensoredStateNet:
         times, states, F = self._grid(t.max(), step)
         return 1 - np.interp(t, times, residual_cdf(self.edges_, state, elapsed, times, states, F))
 
-    def nll(self, intervals):
+    def nll(self, intervals, X=None):
         """−log L интервалов с цензурой. Трассы с переходом или состоянием, которых нет в модели,
         исключаются; их доля — ``unseen_share``."""
         edges = {(e["src"], e["dst"]): e for e in self.edges_}
@@ -147,17 +222,23 @@ class CensoredStateNet:
         unseen = (observed & ~known) | (~observed & ~intervals["src"].isin(sources))
         unseen_cases = set(intervals.loc[unseen, "case_id"])
         kept = intervals.loc[~intervals["case_id"].isin(unseen_cases)]
+        if self.feature_columns:
+            design = self.encoder_.transform(self._feature_frame(intervals, X=X))
         nll = 0.
         for src, group in kept.groupby("src"):
             out = [edge for edge in edges if edge[0] == src]
-            nll += source_nll(group, out, [edges[e]["p"] for e in out], [edges[e]["dist"] for e in out])
+            if self.feature_columns:
+                positions = np.flatnonzero((intervals.src == src) & ~intervals.case_id.isin(unseen_cases))
+                nll += covariates.conditional_nll(group, [edges[e] for e in out], design[positions])
+            else:
+                nll += source_nll(group, out, [edges[e]["p"] for e in out], [edges[e]["dist"] for e in out])
         return dict(unseen_share=len(unseen_cases) / intervals["case_id"].nunique(),
                     nll_per_interval=nll / len(kept) if len(kept) else np.nan,
                     nll_per_trace=nll / kept["case_id"].nunique() if len(kept) else np.nan)
 
-    def score(self, intervals):
+    def score(self, intervals, X=None):
         """Средний log L на интервал (больше — лучше), как ``score`` в sklearn."""
-        return -self.nll(intervals)["nll_per_interval"]
+        return -self.nll(intervals, X=X)["nll_per_interval"]
 
     def evaluate(self, raw, metrics="level4", observation_end=None, reason="lost", *, n_sim=5000, seed=2026):
         """Метрики обученной модели на журнале ``raw`` (DataFrame или :class:`EventLog`).
@@ -179,15 +260,20 @@ class CensoredStateNet:
         selected = dict.fromkeys(metric for name in names for metric in _expand(name))
         if not selected:
             raise ValueError("Метрики не выбраны: укажите имя, уровень или 'all'")
+        if self.feature_columns and any(LEVEL_OF[name] != "level4" for name in selected):
+            raise ValueError("Для модели с признаками доступны метрики level4; для сценарных метрик используйте for_features({...}).evaluate(...)")
         needs_training = {"ibs", "temporal_deviation_share"}.intersection(selected)
         if needs_training and self.log_ is None:
             raise ValueError(f"Метрики {', '.join(sorted(needs_training))} требуют fit(raw), а не fit(intervals=...)")
+        event_log = raw if isinstance(raw, EventLog) else None
         if isinstance(raw, EventLog):
             seen = raw.last_seen if observation_end is None else \
                 pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
             raw, observation_end = raw.events, seen
         log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
         test_intervals = make_intervals(log, cases, self.min_duration)
+        if self.feature_columns:
+            test_intervals[self.feature_columns] = self._feature_frame(test_intervals, event_log)
         fold = Fold(0, seed, n_sim, {"model": self}, self.log_, log, self.cases_, cases,
                     self.intervals_, test_intervals)
         if any(LEVEL_OF[name] == "level1" for name in selected):
@@ -202,9 +288,11 @@ class CensoredStateNet:
 
     def to_pm4py(self, censoring=True):
         """``(net, initial_marking, final_marking)`` PM4Py; ``censoring=False`` — без места ``CENS``."""
+        self._require_profile()
         intervals = self.intervals_ if censoring else self.intervals_.loc[self.intervals_["observed"]]
         return adapters.state_petri_net(intervals, self.start, self.terminal, self.edges_)
 
     def to_sdfa(self, censoring=False, digits=3):
         """Автомат для Ebi; ``censoring=True`` — остановка в состоянии с вероятностью ``q``."""
+        self._require_profile()
         return adapters.to_sdfa(self.edges_, self.start, self.stop_ if censoring else None, digits)
