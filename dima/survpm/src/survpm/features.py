@@ -156,8 +156,10 @@ def _asof(points, measurements, feature):
     """Для точек ``case_id, time`` — последнее значение ``feature`` не позже ``time``, его время
     и число замеров к этому моменту; порядок строк ``points`` сохраняется."""
     right = measurements.loc[measurements["feature"] == feature, ["case_id", "timestamp", "value"]]
+    right = right.assign(timestamp=pd.to_datetime(right["timestamp"], utc=True).astype("datetime64[ns, UTC]"))
     right = right.assign(count=right.groupby("case_id").cumcount() + 1).sort_values("timestamp", kind="stable")
     left = points.reset_index(names="_row").sort_values("time", kind="stable")
+    left["time"] = pd.to_datetime(left["time"], utc=True).astype("datetime64[ns, UTC]")
     merged = pd.merge_asof(left, right, left_on="time", right_on="timestamp", by="case_id",
                            direction="backward", allow_exact_matches=True)
     return merged.set_index("_row").sort_index()

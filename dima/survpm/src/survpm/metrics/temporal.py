@@ -157,6 +157,8 @@ def ibs(model, fold):
     # IPCW-веса считаются по цензуре обучения: тестовые времена должны быть меньше последнего в обучении.
     scored = cases.loc[cases["duration"] < train["duration"].max()]
     event_times = scored.loc[scored["event"] == 1, "duration"]
+    if event_times.empty:
+        return np.nan
     times = np.unique(np.quantile(event_times, np.linspace(.1, .8, 15)))
     times = times[(times > scored["duration"].min()) & (times < scored["duration"].max())]
     if len(times) < 2:

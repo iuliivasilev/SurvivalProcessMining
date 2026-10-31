@@ -19,25 +19,9 @@ from sklearn.model_selection import StratifiedKFold
 
 from ..log import intervals as make_intervals, prepare
 from ..model import CensoredStateNet
-from . import likelihood, process, stochastic, temporal
+from ..features import EventLog
 from .fold import Fold, per_model  # noqa: F401  (часть API crossval)
-
-LEVELS = {"level1": process.METRICS, "level2": stochastic.METRICS,
-          "level3": temporal.METRICS, "level4": likelihood.METRICS}
-METRICS = {name: metric for metrics in LEVELS.values() for name, metric in metrics.items()}
-"""Все встроенные метрики по имени, в порядке уровней."""
-LEVEL_OF = {name: level for level, metrics in LEVELS.items() for name in metrics}
-
-
-def _expand(name):
-    """``"all"``, уровень или имя метрики → имена встроенных метрик."""
-    if name == "all":
-        return list(METRICS)
-    if name in LEVELS:
-        return list(LEVELS[name])
-    if name in METRICS:
-        return [name]
-    raise ValueError(f"Неизвестная метрика {name!r}; есть 'all', {', '.join(LEVELS)}, {', '.join(METRICS)}")
+from .registry import LEVELS, METRICS, LEVEL_OF, _expand
 
 
 def trace_folds(cases, k=5, seed=2026):
@@ -53,10 +37,13 @@ class CrossValidator:
     Метрик по умолчанию нет: их добавляет :meth:`add_metrics`.
     """
 
-    def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000, repeats="simultaneous"):
+    def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000, repeats="simultaneous",
+                 *, feature_columns=None, feature_window=None, l2=1.):
         self.start, self.terminal, self.k, self.seed = start, terminal, k, seed
         self.min_duration, self.n_sim, self.repeats = min_duration, n_sim, repeats
         self.metrics = {}
+        self.feature_columns = list(feature_columns) if feature_columns else []
+        self.feature_window, self.l2 = feature_window, l2
 
     def add_metrics(self, *names, **custom):
         """Встроенные метрики по имени, уровню (``"level1"`` … ``"level4"``) или все (``"all"``);
@@ -80,19 +67,31 @@ class CrossValidator:
 
     def fit_models(self, train_intervals):
         """Модели фолда; переопределите, чтобы сравнивать другие модели."""
-        naive = CensoredStateNet(self.start, self.terminal, use_censoring=False).fit(intervals=train_intervals)
+        options = dict(feature_columns=self.feature_columns, feature_window=self.feature_window, l2=self.l2)
+        naive = CensoredStateNet(self.start, self.terminal, use_censoring=False, **options).fit(intervals=train_intervals)
         return {"naive": naive,
                 "censor_aware": CensoredStateNet(self.start, self.terminal,
-                                                 families=naive.families_).fit(intervals=train_intervals)}
+                                                 families=naive.families_, **options).fit(intervals=train_intervals)}
 
     def run(self, raw, observation_end=None, reason="lost", progress=print):
         """Словарь ``таблица → DataFrame`` с колонкой ``fold``: по таблице на уровень
         (только выбранные метрики) и на каждую свою метрику."""
         if not self.metrics:
             raise ValueError("Метрики не выбраны: add_metrics('all'), add_metrics('level3'), add_metrics('km_sup') …")
+        event_log = raw if isinstance(raw, EventLog) else None
+        if event_log is not None:
+            observation_end = event_log.last_seen if observation_end is None else \
+                pd.concat([event_log.last_seen, observation_end], axis=1).max(axis=1)
+            raw = event_log.events
         log, cases = prepare(raw, self.start, self.terminal, observation_end, reason, self.repeats)
         intervals = make_intervals(log, cases, self.min_duration)
         builtin = [name for name in METRICS if name in self.metrics]
+        if self.feature_columns:
+            if any(LEVEL_OF[name] != "level4" for name in builtin):
+                raise ValueError("CV с признаками поддерживает level4; метрики траекторий требуют сценария признаков")
+            template = CensoredStateNet(self.start, self.terminal, feature_columns=self.feature_columns,
+                                        feature_window=self.feature_window)
+            intervals[self.feature_columns] = template._feature_frame(intervals, event_log)
         own = [name for name in self.metrics if name not in METRICS]
 
         def part(table, ids):

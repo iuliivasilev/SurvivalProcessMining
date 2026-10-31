@@ -77,9 +77,87 @@ Sepsis с признаками: `datasets.load_sepsis_log(path)` — трасс�
 значения анализов дополнительно в `measurements`; `measurement_activities=datasets.SEPSIS_MEASUREMENTS`
 делает Examination прозрачной. Проверка — `features_sepsis.ipynb`.
 
+### Обучение с признаками
+
+Признаки включаются явно; без `feature_columns` сохраняется прежняя модель.
+
+```python
+model = survpm.CensoredStateNet(
+    "Registration", "Discharge",
+    feature_columns=["Age", "CRP", "CRP_age", "history_visits"],
+    l2=1.0,
+).fit(train_log)                       # EventLog, отдельный от test_log
+model.coefficients_table()             # коэффициенты для стандартизованных признаков
+model.evaluate(test_log)["level4"]     # индивидуальный likelihood с цензурой
+
+profile = model.for_features({"Age": 65, "CRP": 30, "CRP_age": 0.5, "history_visits": 1})
+profile.edges_table()
+profile.survival([1, 7, 30], method="grid")
+profile.simulate(100, seed=0)
+```
+
+`features.at_entry` берёт значения на входе. Дополнительно доступны `history_visits`
+(номер посещения текущего состояния, начиная с 1) и `history_elapsed_days` (дни от начала трассы).
+`feature_window="1D"` включает оконные признаки, например `CRP_n_1D`. Можно передать готовые
+признаки: `fit(intervals=intervals, X=frame)`, `nll(test_intervals, X=test_frame)`;
+индексы X и интервалов должны совпадать.
+
+Оценка совместная: `p_sd(X) = softmax(alpha_sd + beta_sd·X)`,
+`T_sd(X) = exp(gamma_sd·X) T_sd(0)`. У цензуры суммируется `p_sd(X) S_sd(c | X)`
+по скрытым выходам. Поддерживаются exponential, lognormal, gamma и weibull, без uniform.
+Медианы пропусков, индикаторы, one-hot и стандартизация оцениваются только на обучении;
+неизвестная категория при прогнозе кодируется как базовая. Постоянные колонки удаляются.
+`l2` штрафует коэффициенты признаков, но не базовые параметры. В таблице коэффициентов
+положительный `time` означает растяжение времени; `choice` задан относительно последнего
+по алфавиту выхода состояния. Базовые `edges_` относятся к нулю закодированных признаков.
+
+`for_features` возвращает копию с **фиксированным сценарием во всех будущих состояниях**.
+Будущие анализы, история и признаки не обновляются автоматически. Время ожидания внутри
+состояния учитывается через `profile.residual_survival(...)`, но новые измерения внутри
+ожидания пока не входят в обучение. Без профиля вероятностные прогнозы и экспорт отклоняются.
+
+CV с признаками: `CrossValidator(..., feature_columns=[...]).add_metrics("level4").run(log)`.
+Он принимает EventLog и обучает кодирование отдельно в каждом фолде. Для модели с признаками
+сейчас реализована индивидуальная оценка level4; остальные уровни требуют явного сценария:
+`profile.evaluate(test_log, metrics=...)`. Это оценка фиксированного сценария, а не
+персонализированная оценка всей тестовой популяции.
+
 ## Метрики и кросс-валидация
 
-По умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —
+### Метрики одной обученной модели
+
+`evaluate` оценивает модель на переданном тестовом журнале без переобучения:
+
+```python
+train, train_censoring = datasets.generate_ad(500, seed=1)
+test, test_censoring = datasets.generate_ad(200, seed=2)
+model = survpm.CensoredStateNet("A", "D").fit(train, train_censoring["end"])
+
+results = model.evaluate(test, observation_end=test_censoring["end"])
+results["level4"]  # unseen_share, nll_per_interval, nll_per_trace
+
+# Отдельные метрики, уровни или "all"; для уровней 1–3 нужны дополнительные зависимости.
+results = model.evaluate(test, metrics=["fitness_token", "km_sup", "level4"],
+                         observation_end=test_censoring["end"], n_sim=5000, seed=2026)
+```
+
+Возвращается словарь таблиц по уровням с колонкой `model="model"`, без колонки `fold`.
+`temporal_deviation_share` дополнительно возвращает базовую линию `train_log`.
+Уровень 1 оценивает только сеть этой модели; сравнение с Inductive Miner выполняется в CV.
+Принимаются DataFrame и `EventLog`; используются те же настройки повторов и минимальной
+длительности, что при обучении. У `EventLog` время наблюдения учитывает также измерения.
+По умолчанию считается только `level4`, которому достаточно зависимостей ядра. Зависимости
+других уровней загружаются при вычислении выбранных метрик.
+Если все тестовые трассы неизвестны модели, `unseen_share=1`, а значения NLL — `NaN`.
+
+При `fit(raw)` модель сохраняет подготовленный обучающий журнал в `log_` и таблицу трасс
+в `cases_`. Они нужны для `ibs` (обучающая оценка цензуры) и `temporal_deviation_share`
+(обучающий временной профиль). После `fit(intervals=...)` эти две метрики недоступны;
+остальные можно считать. Тестовые данные не используются для восстановления обучения.
+
+### Кросс-валидация
+
+У `CrossValidator` по умолчанию не считается ничего: метрики добавляются явно через `add_metrics` —
 по одной, уровнем или все сразу.
 
 ```python
