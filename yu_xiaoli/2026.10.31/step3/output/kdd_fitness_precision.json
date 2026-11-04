@@ -1,0 +1,72 @@
+{
+  "data": "D:\\🆗🆗🆗yxl的matebook\\尤里-哔哔哔哔哔设\\data\\kdd2015\\train\\train\\log_train.csv",
+  "n_courses": 5,
+  "courses": [
+    "81UZtt1JJwBFYMj5u38WNKCSVA4IJSDv",
+    "AXUJZGmZ0xaYSWazu8RQ1G5c76ECT1Kd",
+    "DPnLzkJJqOOPRJfBxIHbQEERiYHu5ila",
+    "H2lDW05SyKnwntZ6Fora76aPAEswcMa5",
+    "I7Go4XwWgpjRJM8EZGEnBpkfSmBNOlsO"
+  ],
+  "n_enrollments_in_courses": 47706,
+  "n_traces_with_learning_events": 47704,
+  "n_events_scored": 2690915,
+  "dropped_event": "page_close",
+  "absorbing_from_truth": true,
+  "definitions": {
+    "fitness": "在日志直接跟随中，能被模型边走通的次数占比",
+    "precision": "模型边里，真正在该 KDD 子集日志中出现过的占比"
+  },
+  "results": [
+    {
+      "model": "browser",
+      "fitness": 1.0,
+      "fitness_unique_edges": 1.0,
+      "precision": 0.981481,
+      "log_moves": 2690915,
+      "matched_moves": 2690915,
+      "model_edges": 54,
+      "used_model_edges": 53
+    },
+    {
+      "model": "explorer",
+      "fitness": 1.0,
+      "fitness_unique_edges": 1.0,
+      "precision": 0.981481,
+      "log_moves": 2690915,
+      "matched_moves": 2690915,
+      "model_edges": 54,
+      "used_model_edges": 53
+    },
+    {
+      "model": "abandoner",
+      "fitness": 1.0,
+      "fitness_unique_edges": 1.0,
+      "precision": 0.981481,
+      "log_moves": 2690915,
+      "matched_moves": 2690915,
+      "model_edges": 54,
+      "used_model_edges": 53
+    },
+    {
+      "model": "converter",
+      "fitness": 1.0,
+      "fitness_unique_edges": 1.0,
+      "precision": 0.981481,
+      "log_moves": 2690915,
+      "matched_moves": 2690915,
+      "model_edges": 54,
+      "used_model_edges": 53
+    },
+    {
+      "model": "mixed_discovered",
+      "fitness": 1.0,
+      "fitness_unique_edges": 1.0,
+      "precision": 0.981481,
+      "log_moves": 2690915,
+      "matched_moves": 2690915,
+      "model_edges": 54,
+      "used_model_edges": 53
+    }
+  ]
+}

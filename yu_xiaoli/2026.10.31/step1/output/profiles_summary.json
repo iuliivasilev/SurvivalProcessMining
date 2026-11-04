@@ -1,0 +1,46 @@
+[
+  {
+    "profile": "browser",
+    "n_objects": 2000,
+    "n_events": 11417,
+    "mean_events": 5.71,
+    "active_share": 0.24,
+    "dropout_share": 0.759,
+    "n_edges": 54,
+    "seed": 1,
+    "out": "output\\browser"
+  },
+  {
+    "profile": "explorer",
+    "n_objects": 2000,
+    "n_events": 15010,
+    "mean_events": 7.5,
+    "active_share": 0.321,
+    "dropout_share": 0.679,
+    "n_edges": 54,
+    "seed": 2,
+    "out": "output\\explorer"
+  },
+  {
+    "profile": "abandoner",
+    "n_objects": 2000,
+    "n_events": 7979,
+    "mean_events": 3.99,
+    "active_share": 0.148,
+    "dropout_share": 0.852,
+    "n_edges": 54,
+    "seed": 3,
+    "out": "output\\abandoner"
+  },
+  {
+    "profile": "converter",
+    "n_objects": 2000,
+    "n_events": 13619,
+    "mean_events": 6.81,
+    "active_share": 0.664,
+    "dropout_share": 0.336,
+    "n_edges": 54,
+    "seed": 4,
+    "out": "output\\converter"
+  }
+]

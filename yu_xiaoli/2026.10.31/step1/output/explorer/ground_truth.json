@@ -1,0 +1,448 @@
+{
+  "profile": "explorer",
+  "family": "exponential",
+  "time_unit": "hour",
+  "parameter_status": "specified_not_estimated",
+  "note": "游走：navigate/access/wiki 来回多，做题少，轨迹更长，结束前仍可能流失。设定参数，不是 KDD 估计。",
+  "seed": 2,
+  "n_objects": 2000,
+  "horizon": null,
+  "absorbing": [
+    "active",
+    "dropout"
+  ],
+  "edges": [
+    {
+      "src": "start",
+      "dst": "video",
+      "prob": 0.2,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "start",
+      "dst": "problem",
+      "prob": 0.05,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "start",
+      "dst": "access",
+      "prob": 0.25,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "start",
+      "dst": "wiki",
+      "prob": 0.15,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "start",
+      "dst": "discussion",
+      "prob": 0.1,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "start",
+      "dst": "navigate",
+      "prob": 0.25,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "video",
+      "prob": 0.1,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "problem",
+      "prob": 0.08,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "access",
+      "prob": 0.2,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "wiki",
+      "prob": 0.15,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "discussion",
+      "prob": 0.1,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "navigate",
+      "prob": 0.22,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "video",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "video",
+      "prob": 0.15,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "problem",
+      "prob": 0.08,
+      "rate": 0.35,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "access",
+      "prob": 0.18,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "wiki",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "discussion",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "navigate",
+      "prob": 0.2,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "problem",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "video",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "problem",
+      "prob": 0.06,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "access",
+      "prob": 0.18,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "wiki",
+      "prob": 0.15,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "discussion",
+      "prob": 0.1,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "navigate",
+      "prob": 0.24,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "access",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "video",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "problem",
+      "prob": 0.06,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "access",
+      "prob": 0.18,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "wiki",
+      "prob": 0.15,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "discussion",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "navigate",
+      "prob": 0.22,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "wiki",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "video",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "problem",
+      "prob": 0.08,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "access",
+      "prob": 0.15,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "wiki",
+      "prob": 0.12,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "discussion",
+      "prob": 0.15,
+      "rate": 0.45,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "navigate",
+      "prob": 0.23,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "discussion",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "video",
+      "prob": 0.15,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "problem",
+      "prob": 0.06,
+      "rate": 0.4,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "access",
+      "prob": 0.2,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "wiki",
+      "prob": 0.15,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "discussion",
+      "prob": 0.12,
+      "rate": 0.5,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "navigate",
+      "prob": 0.17,
+      "rate": 0.55,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "active",
+      "prob": 0.05,
+      "rate": 0.3,
+      "shape": null,
+      "scale": null
+    },
+    {
+      "src": "navigate",
+      "dst": "dropout",
+      "prob": 0.1,
+      "rate": 0.18,
+      "shape": null,
+      "scale": null
+    }
+  ]
+}

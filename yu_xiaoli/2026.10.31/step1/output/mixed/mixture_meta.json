@@ -1,0 +1,16 @@
+{
+  "n_objects": 4000,
+  "seed": 42,
+  "weights": {
+    "browser": 0.25,
+    "explorer": 0.25,
+    "abandoner": 0.25,
+    "converter": 0.25
+  },
+  "profile_counts": {
+    "browser": 1004,
+    "explorer": 979,
+    "abandoner": 1066,
+    "converter": 951
+  }
+}
