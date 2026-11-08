@@ -1,0 +1,20 @@
+{
+  "input": "../examples/events.csv",
+  "time_column": "t",
+  "time_unit": "s",
+  "scope_columns": ["case"],
+  "event_columns": ["event"],
+  "match_columns": [],
+  "target": ["F"],
+  "lookback_seconds": 20,
+  "anchor_max_gap_seconds": 5,
+  "edge_max_gap_seconds": 5,
+  "half_life_seconds": 2,
+  "prediction_gap_seconds": 0,
+  "controls_per_target": 1,
+  "smoothing": 1,
+  "pagerank_alpha": 0.85,
+  "max_depth": 4,
+  "beam_width": 500,
+  "top_k": 10
+}
