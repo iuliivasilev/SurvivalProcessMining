@@ -13,7 +13,6 @@ classDiagram
     class ProcessModel {
         network
         transitions
-        times
         fit(log)
     }
     class Simulator
@@ -31,7 +30,7 @@ classDiagram
     Router ..> EventLog : результат
 ```
 
-Цикл «выбор перехода → выбор времени → обновление признаков → запись» принадлежит движкам. Модель отвечает на один запрос: вероятности и распределения времени исходящих переходов из заданного состояния.
+Цикл «признаки на входе → независимые времена переходов → выбор минимального времени → переход и запись» принадлежит движкам. Единая `TransitionModel` задаёт и обучает совместную модель следующего направления и времени.
 
 Направление зависимостей (одностороннее):
 
@@ -50,15 +49,14 @@ adapters  →  network, log   (pm4py, graphviz — extras)
 | `network` | `Network` (структура), валидация, экспорт |
 | `discovery` | протокол `PetriBackend`, функция `discover(log, backend)` |
 | `adapters/pm4py` | единственное место зависимости от PM4Py (AGPL), extras |
-| `models/time` | протокол `TimeModel`, семейства (exponential, weibull, lognormal, gamma), KM, выбор по AIC |
-| `models/choice` | протокол `TransitionModel` (вероятности выбора направления) |
-| `models/features` | протокол `FeatureUpdater` |
-| `model` | `ProcessModel` — композиция Network + TransitionModel + TimeModel |
+| `models/transitions` | единая обучаемая `TransitionModel` для времени и направления перехода; семейства распределений — компоненты её реализации |
+| `models/features` | построение признаков из истории (`HistoryFeatures`) и обновление X при входе (`FeatureUpdater`) |
+| `model` | `ProcessModel` — композиция Network + TransitionModel |
 | `engine` | `Simulator`, `Router`, `Forecaster`, `ObjectStream`, `TransitionPicker` |
 | `viz` | протокол `Visualizer`, бэкенды graphviz/matplotlib |
 | `metrics` | протокол `Metric`, реестр, `compare(models, log)`, структурные метрики сетей |
 
-Реализации протоколов регистрируются по имени (`register_time_model("weibull_aft", WeibullAFT)`); эксперименты собираются из конфигурации без импорта реализаций в ядро.
+Реализации протоколов регистрируются по имени (`register_transition_model("weibull", WeibullTransitionModel)`); эксперименты собираются из конфигурации без импорта реализаций в ядро.
 
 ## EventLog — данные
 
@@ -76,12 +74,12 @@ class EventLog:
     def prepare(self, rules) -> "EventLog": ...      # сортировка, обрезка до TERMINAL,
                                                      # склейка повторов, min_duration
     def intervals(self) -> DataFrame: ...            # интервалы состояний + индикатор цензуры
-    def features_at(self, case_id, t, mode="train") -> dict: ...   # as-of признаки
+    def features_at(self, case_id, t, cutoff=None) -> dict: ...   # фактические данные не позже cutoff
     def split(self, method, **options) -> tuple["EventLog", "EventLog"]: ...
     def to_frame(self) -> dict[str, DataFrame]: ...
 ```
 
-Правила `prepare` заменяемы; трасса без START отбрасывается; незавершённая трасса — цензурированный интервал; `mode="forecast"` в `features_at` — защита от lookahead при прогнозе. Варианты реализации: правила подготовки трасс, парсеры источников данных.
+Правила `prepare` заменяемы; трасса без START отбрасывается; незавершённая трасса — цензурированный интервал; Для прогноза `cutoff=as_of` ограничивает фактические данные; при `t > as_of` будущие X задаются отдельным сценарием. Варианты реализации: правила подготовки трасс, парсеры источников данных.
 
 ## Network — структура процесса
 
@@ -112,29 +110,32 @@ PM4Py импортируется только внутри адаптера (и�
 
 ## Протоколы моделей — точки расширения
 
-Минимальные контракты; экземпляр `TimeModel` обучается на каждом ребре. Студенты реализуют варианты (параметрические семейства, CoxPH, деревья выживания, KDE; регрессии выбора; модели динамики признаков), не изменяя ядро.
+Единая `TransitionModel` обучается и обновляется на данных обо всех исходящих переходах. Семейства распределений могут быть внутренними компонентами реализации, но не являются отдельно обучаемой моделью выбора. Для цензурированного наблюдения следующий исход неизвестен и учитывается совместно по возможным направлениям.
 
 ```python
-class TimeModel(Protocol):                      # модель времени перехода
-    def fit(self, durations, events, X=None) -> Self: ...   # правое цензурирование
-    def sample(self, X, rng) -> float: ...
-    def sf(self, t, X) -> float: ...            # + cdf, hazard, pdf
-    def logsf(self, t, X) -> float: ...         # + logpdf — для правдоподобия
-    def quantile(self, q, X) -> float: ...      # + mean, median, aic, params
+class HistoryFeatures(Protocol):
+    def fit(self, train_log) -> Self: ...
+    def transform(self, history, as_of) -> dict: ...
 
-class TransitionModel(Protocol):                # выбор направления
-    def fit(self, log, network) -> Self: ...
-    def probs(self, state, X, history) -> dict[str, float]: ...
+class TransitionModel(Protocol):
+    def fit(self, log, network, features, use_censoring=True) -> Self: ...
+    def update(self, log, features) -> Self: ...
+    def transition_parameters(self, state, X, history) -> dict: ...
+    def log_likelihood(self, intervals, features) -> float: ...
+    def next_transition(self, state, X, history, rng) -> tuple[str, float]: ...
 
-class FeatureUpdater(Protocol):                 # X -> X' при входе в состояние
+class FeatureUpdater(Protocol):
     def __call__(self, X, state, t, rng) -> dict: ...
-    def loglik(self, X, X_new, state) -> float: ...         # опционально, для валидации
 
-class TransitionPicker(Protocol):               # совместный выбор (куда, когда)
-    def pick(self, probs, time_models, X, rng) -> tuple[str, float]: ...
+class TransitionPicker(Protocol):
+    def pick(self, transition_times, rng) -> tuple[str, float]: ...
 ```
 
-Встроенные реализации: семейства exponential / weibull / lognormal / gamma с выбором по AIC; `TransitionModel` нормировкой весов; тождественный `FeatureUpdater`; `ChoiceThenTime` (направление по p, затем время).
+`HistoryFeatures` извлекает признаки из доступной истории: например, время в состоянии, число посещений, предыдущие события и последние значения измерений. Его настройки обучаются только на обучающих данных. `FeatureUpdater` задаёт изменение X при входе в состояние и не заменяет построение признаков из истории.
+
+**Согласованное правило выбора:** для каждого исходящего перехода независимо генерируется время; выбирается переход с минимальным временем. `TransitionModel` задаёт распределения этих времён и рассчитывает соответствующий совместный закон направления и времени для обучения, прогноза и оценки. При независимых временах вклад наблюдённого перехода в направлении k в момент t — `f_k(t) * product(S_j(t), j != k)`; вклад правой цензуры в момент c — `product(S_j(c))`. Вероятности направлений выводятся из этого закона. Допущения о цензурировании и независимости времён должны быть указаны в реализации модели.
+
+Встроенные реализации: семейства exponential / weibull / lognormal / gamma; тождественный `FeatureUpdater`; `MinTimePicker` для независимых времён.
 
 **Инварианты реализаций:**
 
@@ -142,7 +143,23 @@ class TransitionPicker(Protocol):               # совместный выбо�
 - **`fit` возвращает новый экземпляр** (`Self`); обученная модель неизменяема.
 - **Чистые функции от аргументов и `rng`:** без скрытого состояния и скрытой случайности.
 
-Генерация, прогноз и оценка обязаны использовать один `TransitionPicker` — он фиксируется в конфигурации модели (альтернативные стратегии — см. «Расширения»).
+Генерация, прогноз и оценка используют один совместный закон `TransitionModel`. Целевая реализация применяет выбор по минимальному времени; адаптер первой итерации сохраняет существующее правило выбора направления и времени.
+
+## Первая итерация — сквозной каркас и минимум времени
+
+В первой итерации создаются интерфейсы сети, журнала, единой `TransitionModel` и движков. Выбор перехода по **минимуму независимо сгенерированных времён** реализуется сразу: для каждого исходящего ребра генерируется время, переход с минимальным временем определяет следующее состояние и длительность ожидания.
+
+Для работающего сквозного примера параметры распределений по рёбрам можно сначала задать вручную. Используются существующие семейства распределений и функции библиотеки там, где их семантика соответствует задаче. Вероятности исходов и прогноз для этой модели рассчитываются из того же закона минимума; неподдерживаемые расчёты явно обозначаются как ещё не реализованные.
+
+| Компонент | Основа первой итерации |
+|---|---|
+| Данные и признаки | Существующие `EventLog`, `prepare`, `intervals`, `features.values_at` и `features.at_entry` через адаптеры. |
+| Распределения | Существующие семейства из `distributions`; параметры для модели минимума задаются вручную. |
+| Генерация | Новый `MinTimePicker` и цикл с обновлением X при входе в состояние. |
+| Обучение | Существующая совместная оценка с цензурой доступна через адаптер своей модели; обучение модели минимума требует собственной согласованной функции правдоподобия. |
+| Прогноз и оценка | Существующие функции доступны для модели с их исходной семантикой; для модели минимума используются только расчёты, согласованные с её совместным законом. |
+
+Текущий `CensoredStateNet` сначала выбирает направление по вероятности, затем время по распределению выбранного перехода. Это другая модель: её условные распределения нельзя просто передать в `MinTimePicker`, сохранив прежние вероятности и likelihood. При использовании существующей модели адаптер сохраняет её исходную семантику; она не заменяет обязательную реализацию минимума времени.
 
 ## ProcessModel — композиция
 
@@ -150,16 +167,16 @@ class TransitionPicker(Protocol):               # совместный выбо�
 class ProcessModel:
     network: Network
     transitions: TransitionModel
-    times: TimeModel             # прототип; обученный экземпляр на каждом ребре
+    history_features: HistoryFeatures
     picker: TransitionPicker
 
     def fit(self, log, features=None, use_censoring=True) -> "ProcessModel": ...
-    def transition_parameters(self, state, X, history) -> dict[str, tuple[float, TimeModel]]: ...
+    def transition_parameters(self, state, X, history) -> dict: ...  # распределения времён и выводимые вероятности
     def next_transition(self, state, X, history, rng) -> tuple[str, float]: ...
     def edges_table(self) -> DataFrame: ...      # диагностика обучения по рёбрам
 ```
 
-Запросный интерфейс для движков: `next_transition` (стохастический шаг = `transition_parameters` + `picker.pick`) и `transition_parameters` (аналитический доступ к распределениям — для точного прогноза, диагностики, метрик). `picker` остаётся частью конфигурации модели, чтобы генерация, прогноз и оценка использовали одну совместную семантику. Модель не содержит `simulate/predict/evaluate` (это обязанности движков) и не хранит состояние объектов. Для генерации ground truth параметры задаются константными реализациями тех же протоколов.
+Запросный интерфейс для движков: `next_transition` (стохастический шаг = `transition_parameters` + `picker.pick`) и `transition_parameters` (аналитический доступ к распределениям — для точного прогноза, диагностики, метрик). `picker` остаётся частью конфигурации модели, а `transitions` предоставляет согласованный совместный закон для генерации, прогноза и оценки. Модель не содержит `simulate/predict/evaluate` (это обязанности движков) и не хранит состояние объектов. Для генерации ground truth параметры задаются константными реализациями тех же протоколов.
 
 ## Движки
 
@@ -177,6 +194,7 @@ class Simulator:
 
 ```python
 state, X, t = stream.current(obj)
+history = stream.history(obj)
 dst, dt = model.next_transition(state, X, history, rng)  # единственный запрос к модели
 X_new = stream.updater(X, dst, t + dt, rng)              # объект FeatureUpdater (задан при init)
 log.write(obj, dst, t + dt, X_new)                       # скрытые узлы не пишутся
@@ -186,26 +204,30 @@ log.write(obj, dst, t + dt, X_new)                       # скрытые узл
 
 ### Router — применение
 
-Тот же цикл, но признаки не вычисляются, а читаются из журнала: `log.features_at(case_id, t, mode="forecast")`. Результат — цепочка состояний со временем для объекта.
+При воспроизведении известной истории признаки читаются из журнала на соответствующие моменты. При прогнозе на `as_of` доступны только данные не позже `as_of`; для будущих состояний X задаются сценарием или отдельной моделью признаков. X обновляется при входе в состояние, а замеры во время ожидания не пересчитывают уже выбранный переход. Результат — цепочка состояний со временем для объекта.
 
 ```python
 class Router:
     def __init__(self, model: ProcessModel): ...
-    def run(self, log: EventLog, case_id, horizon=None) -> DataFrame: ...
+    def run(self, log: EventLog, case_id, as_of, future_features, horizon=None) -> DataFrame: ...
 ```
 
 ### Forecaster — прогноз
 
 ```python
 class Forecaster:
-    def __init__(self, model, method="simulation", n_paths=1000, seed=None): ...
-    def survival(self, state, X, times) -> DataFrame: ...        # S_k(times) до каждого терминала k
-    def hazard(self, state, X, times) -> DataFrame: ...          # hazard_k(times)
-    def terminal_probs(self, state, X) -> dict[str, float]: ...  # вероятности терминалов
-    def expected_time(self, state, X) -> dict[str, float]: ...   # ожидаемое время до терминалов
+    def __init__(self, model, history_features, method="simulation", n_paths=1000, seed=None): ...
+    def survival(self, history, as_of, times, future_features) -> DataFrame: ...
+    def hazard(self, history, as_of, times, future_features) -> DataFrame: ...
+    def terminal_probs(self, history, as_of, times, future_features) -> DataFrame: ...
+    def expected_time(self, history, as_of, future_features) -> dict[str, float]: ...
 ```
 
-`method="simulation"`: `n_paths` прогонов цикла из точки `(state, X, t0)`, агрегация по путям. `method="exact"`: композиция переходных ядер на сетке времени. Оба метода используют один и тот же `transition_parameters`. Цензура исключается из выбора перехода, но входит в оценку функций; время, уже проведённое в состоянии, задаётся параметром `elapsed`.
+`history` содержит события и измерения, доступные на абсолютный момент `as_of`. `HistoryFeatures` строит признаки, в том числе время с входа в текущее состояние. Прогноз учитывает, что перехода за это время ещё не произошло. Горизонты `times` отсчитываются от `as_of`.
+
+Реальные измерения после `as_of` при прогнозе не используются: будущие X задаются через `future_features` (фиксированный профиль, заранее известный сценарий или модель). Пересчёт X происходит при входе в состояние, а не при каждом новом замере в период ожидания. Воспроизведение полностью известной истории — отдельный режим.
+
+`method="simulation"`: `n_paths` продолжений из текущей истории с учётом уже прошедшего ожидания. `method="exact"`: композиция переходных ядер на сетке, когда это допустимо для модели признаков и истории. Оба метода используют совместный закон `TransitionModel`. Цензурирование учитывается при обучении и оценке и не является исходом процесса.
 
 ### ObjectStream — состояние исполнения
 
@@ -216,6 +238,7 @@ class ObjectStream:
 
     def __init__(self, initial, updater: FeatureUpdater, seed=None): ...
     def current(self, case_id) -> tuple[str, dict, float]: ...
+    def history(self, case_id): ...
 ```
 
 `EventLog` — данные в покое; `ObjectStream` — изменяемое состояние исполнения, которым владеет движок. Движок записывает события потока в новый журнал, поэтому результат `Simulator` — полноценный `EventLog`.
@@ -246,7 +269,7 @@ diff   = compare_networks(net_true, net_recovered)  # рёбра (precision/reca
 
 ```python
 model = ProcessModel(network_true, ...).fit(real_log)          # обучение на внешних данных
-syn_log = Simulator(model).run(stream, seed=42)                # генерация новых данных
+syn_log = Simulator(model, seed=42).run(stream)                # генерация новых данных
 network_rec = discover(syn_log, backend=Pm4pyBackend())        # восстановление сети
 diff = compare_networks(network_true, network_rec)             # сравнение структур
 score = evaluate(ProcessModel(network_rec, ...).fit(syn_log), test_log, ...)  # и поведения
@@ -260,27 +283,27 @@ score = evaluate(ProcessModel(network_rec, ...).fit(syn_log), test_log, ...)  # 
 |---|---|---|
 | Источник и структура данных | `mapping` и правила `prepare` в `EventLog` | формат журнала |
 | Структура процесса | `PetriBackend` или `Network.from_edges` | `Network`, движки |
-| Время перехода (повторные события, конкурирующие риски, …) | реализация `TimeModel` | контракт `fit/sf/hazard/sample` |
-| Вероятности выбора направления | реализация `TransitionModel` | `transition_parameters` |
+| Время и направление перехода | реализация единой `TransitionModel` | совместный закон перехода |
+| Признаки из истории | реализация `HistoryFeatures` | ограничение истории моментом `as_of` |
 | Динамика признаков | реализация `FeatureUpdater` | цикл движков |
 | Совместный выбор (направление, время) | реализация `TransitionPicker` | согласованность расчёта и симуляции |
 | Скрытое состояние | реализация `LatentModel` | поток, журнал, движки |
 | Критерии качества | реализация `Metric` | `evaluate` / `compare` |
 
-Студент в новом домене пишет 1–3 реализации протоколов и регистрирует их по имени; движки, журнал, визуализация и метрики работают без изменений. Пример: повторные события — `TimeModel` с признаками истории (счётчики, давность) и циклы в `Network`.
+Студент в новом домене пишет 1–3 реализации протоколов и регистрирует их по имени; движки, журнал, визуализация и метрики работают без изменений. Пример: повторные события — `TransitionModel`, признаки истории (счётчики, давность) и циклы в `Network`.
 
 ## Сквозной пример
 
 ```python
-log = EventLog.from_frame(df, mapping={...}).prepare()
+log = EventLog.from_frame(df, mapping={...}).prepare(rules)
 train, test = log.split(method="by_case", ratio=0.8)
 
 network = discover(train, backend=Pm4pyBackend())
-model = ProcessModel(network, times=AicTimeModel()).fit(train)
+model = ProcessModel(network, transitions=transition_model, history_features=history_features).fit(train)
 
-syn_log = Simulator(model).run(ObjectStream(objects, updater), seed=42)   # генерация
-path    = Router(model).run(real_log, case_id=7)                          # применение
-S       = Forecaster(model).survival("A", X0, times=[1, 7, 30])           # прогноз
+syn_log = Simulator(model, seed=42).run(ObjectStream(objects, updater))   # генерация
+path    = Router(model).run(real_log, case_id=7, as_of=as_of, future_features=scenario)                          # применение
+S       = Forecaster(model, history_features).survival(history, as_of, times=[1, 7, 30], future_features=scenario)           # прогноз
 scores  = evaluate(model, test, metrics=["nll", "ibs"])                   # качество
 ```
 
@@ -303,7 +326,7 @@ Z хранится в `ObjectStream` и не пишется в наблюдае�
 
 ### Конкурирующие риски
 
-Несколько терминальных состояний и причины цензуры задаются конфигурацией `EventLog`. Совместное распределение (dst, dt) определяет стратегия `TransitionPicker`: `ChoiceThenTime` (направление по p, затем время) или `CompetingRisks` (минимум по сэмплированным временам; направление рождается из сравнения времён, модель выбора может не запускаться). Для пользователя стратегия — категориальный параметр конфигурации (имя из реестра); новые совместные семантики (зависимые риски, копулы) — новые реализации протокола.
+Несколько терминальных состояний и причины цензурирования задаются конфигурацией `EventLog`. Базовая стратегия — независимые времена исходящих переходов и выбор минимального. Причина исхода и причина цензурирования — разные поля. Вероятности терминальных исходов к заданному горизонту рассчитываются из совместного закона модели.
 
 ### Маркированные сети
 
@@ -318,7 +341,7 @@ Z хранится в `ObjectStream` и не пишется в наблюдае�
 3. Неизменяемость обученных моделей — разделение между воркерами без копирования.
 4. Дочерние генераторы случайности на объект — детерминизм при любом числе воркеров.
 5. Параметр `executor` в движках — смена стратегии исполнения без изменения моделей.
-6. Кэширование `transition_parameters` по ключу (состояние, хэш X).
+6. Кэширование `transition_parameters` с учётом состояния, X и всех используемых признаков истории.
 7. Колоночное представление журнала; векторные операции на горячих путях (интервалы, as-of признаки).
 
 ## Ключевые решения
@@ -333,4 +356,6 @@ Z хранится в `ObjectStream` и не пишется в наблюдае�
 | Единый `rng` во всех протоколах + `spawn` на объект | Полная воспроизводимость по seed, в т.ч. при параллелизме |
 | Синтетический журнал = полноценный EventLog | Замкнутый round-trip: генерация → discovery → сравнение сетей |
 | Домен = реализации протоколов + конфигурация | Перенос на новый домен без изменений ядра и движков |
-| Расширения (Z, конкурирующие риски, маркировка, ускорение) — отдельный слой | Основной каркас остаётся минимальным |
+| Единая `TransitionModel` и выбор минимального времени | Согласованные обучение, прогноз и генерация для конкурирующих переходов |
+| История признаков ограничена `as_of` | Исключение утечки будущих измерений |
+| Расширения (Z, маркировка, ускорение) — отдельный слой | Основной каркас остаётся минимальным |
