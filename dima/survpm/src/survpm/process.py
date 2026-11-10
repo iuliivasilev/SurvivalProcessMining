@@ -13,19 +13,35 @@ from .models.features import DefaultHistoryFeatures
 
 
 def entry_features(log, events, iv, builder, columns):
+    """Признаки X на входе в src для каждого интервала (индекс как у ``iv``).
+
+    Если у builder есть векторный ``transform_intervals`` (DefaultHistoryFeatures), признаки
+    считаются одним проходом; иначе — ``transform`` по префиксу истории каждого интервала.
+    """
+    columns = list(columns)
+    vectorized = getattr(builder, 'transform_intervals', None)
+    if vectorized is not None:
+        X = vectorized(log, events, iv)
+        if X is not None:
+            unknown = [c for c in columns if c not in X.columns]
+            if unknown:
+                raise KeyError(f'Нет признаков в журнале: {unknown}')
+            return X[columns]
     # Один timestamp может соответствовать нескольким упорядоченным входам.
     groups = {case: group for case, group in events.groupby('case_id', sort=False)}
+    measurements = {case: group for case, group in log.measurements.groupby('case_id', sort=False)}
+    empty = log.measurements.iloc[:0]
     positions, rows = {}, []
     for row in iv.itertuples():
         pos = positions.get(row.case_id, 0)
         prefix = groups[row.case_id].iloc[:pos+1]
         positions[row.case_id] = pos+1
-        measures = log.measurements.loc[(log.measurements.case_id == row.case_id) &
-                                        (log.measurements.timestamp <= row.enter)]
+        case_measures = measurements.get(row.case_id, empty)
+        measures = case_measures.loc[case_measures.timestamp <= row.enter]
         view = EventLog(prefix, log.cases.reindex([row.case_id]), measures,
                         pd.Series({row.case_id: row.enter}))
         rows.append(builder.transform(view, row.case_id, row.enter)['X'])
-    return pd.DataFrame(rows, index=iv.index)[list(columns)]
+    return pd.DataFrame(rows, index=iv.index)[columns]
 
 
 class ProcessModel:

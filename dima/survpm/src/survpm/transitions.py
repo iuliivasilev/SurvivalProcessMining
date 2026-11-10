@@ -33,20 +33,28 @@ class ExponentialTransitionModel:
 
     При отсутствии признаков lambda_sd = n_sd / sum(duration_s). Все конкурирующие
     события дают время экспозиции каждому выходу. rates можно задать вручную.
+    ``clip`` и ``log_features`` передаются в :class:`~survpm.covariates.FeatureEncoder`:
+    обрезка z до диапазона обучения (по умолчанию) и ``log1p`` для скошенных признаков.
     """
-    def __init__(self, rates=None, l2=1., picker=None):
+    def __init__(self, rates=None, l2=1., picker=None, clip=True, log_features=()):
         if l2 < 0:
             raise ValueError('l2 должен быть неотрицательным')
         self.rates = dict(rates or {})
         if any(not np.isfinite(v) or v < 0 for v in self.rates.values()):
             raise ValueError('Интенсивности должны быть конечными и неотрицательными')
         self.l2 = l2
+        self.clip, self.log_features = clip, list(log_features)
         self.encoder = None
         self.coefficients = {}
         self.picker = picker if picker is not None else MinTimePicker()
 
+    def _blank(self):
+        return ExponentialTransitionModel(l2=self.l2, picker=self.picker,
+                                          clip=getattr(self, 'clip', True),
+                                          log_features=getattr(self, 'log_features', ()))
+
     def fit(self, intervals, network, X=None):
-        result = ExponentialTransitionModel(l2=self.l2, picker=self.picker)
+        result = self._blank()
         result.network = network
         result.training = intervals.copy()
         result.training_X = X.copy() if X is not None else None
@@ -59,7 +67,7 @@ class ExponentialTransitionModel:
         if X is not None:
             if not X.index.equals(intervals.index):
                 raise ValueError('Индекс X должен совпадать с индексом intervals')
-            result.encoder = FeatureEncoder().fit(X)
+            result.encoder = FeatureEncoder(clip=self.clip, log_features=self.log_features).fit(X)
             design = result.encoder.transform(X)
         else:
             design = np.empty((len(intervals), 0))
@@ -147,7 +155,7 @@ class ExponentialTransitionModel:
         return float(value)
 
     def condition(self, X):
-        result = ExponentialTransitionModel(l2=self.l2, picker=self.picker)
+        result = self._blank()
         if hasattr(self, 'diagnostics'):
             result.diagnostics = self.diagnostics.copy()
         for src in {src for src, _ in self.rates}:

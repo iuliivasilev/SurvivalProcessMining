@@ -41,6 +41,33 @@ class DefaultHistoryFeatures:
         result['history_elapsed_days'] = float((t-history[0]['timestamp'])/DAY)
         return result
 
+    def transform_intervals(self, log, events, intervals):
+        """Признаки на входе для всех интервалов сразу; те же значения, что ``transform``.
+
+        Интервал k трассы соответствует k-му событию подготовленного журнала ``events``.
+        Возвращает None, если подкласс переопределил ``transform`` или ``at_entry``: тогда
+        :func:`survpm.process.entry_features` считает признаки по одному интервалу.
+        """
+        cls = type(self)
+        if (cls.transform is not DefaultHistoryFeatures.transform
+                or cls.at_entry is not DefaultHistoryFeatures.at_entry):
+            return None
+        ev = events[['case_id', 'activity', 'timestamp']].reset_index(drop=True)
+        ev['_pos'] = ev.groupby('case_id', sort=False).cumcount()
+        ev['history_visits'] = ev.groupby(['case_id', 'activity'], sort=False).cumcount() + 1
+        first = ev.groupby('case_id', sort=False).timestamp.transform('min')
+        ev['history_elapsed_days'] = ((ev.timestamp - first) / DAY).astype(float)
+        pos = intervals.groupby('case_id', sort=False).cumcount().to_numpy()
+        keys = pd.DataFrame({'case_id': intervals.case_id.to_numpy(), '_pos': pos})
+        rows = keys.merge(ev, on=['case_id', '_pos'], how='left', validate='many_to_one')
+        if rows.timestamp.isna().any():
+            raise ValueError('Интервалы не согласованы с событиями журнала')
+        rows.index = intervals.index
+        points = rows[['case_id']].assign(time=rows.timestamp)
+        X = values_at(points, log)
+        return X.assign(history_visits=rows.history_visits.to_numpy(),
+                        history_elapsed_days=rows.history_elapsed_days.to_numpy())
+
     def transform(self, log, case_id, as_of):
         cutoff = timestamp(as_of)
         events = log.events.loc[(log.events.case_id == case_id) & (log.events.timestamp <= cutoff)]
