@@ -48,11 +48,11 @@ def prepare(raw, start, terminal, observation_end=None, reason="lost", repeats="
     parts, case_rows = [], []
     for case_id, group in raw.groupby("case_id", sort=False):
         activities = group["activity"].to_numpy()
-        starts = np.flatnonzero(activities == start)
+        starts = np.flatnonzero(np.isin(activities, [start] if isinstance(start, str) else start))
         if not len(starts):
             continue
         group, activities = group.iloc[starts[0]:], activities[starts[0]:]
-        ends = np.flatnonzero(activities == terminal)
+        ends = np.flatnonzero(np.isin(activities, [terminal] if isinstance(terminal, str) else terminal))
         if len(ends):
             group, activities = group.iloc[:ends[0] + 1], activities[:ends[0] + 1]
         event = len(ends) > 0
@@ -124,3 +124,11 @@ def censoring_summary(intervals):
             row[f"q_{reason}"] = row[f"n_{reason}"] / n_visits
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def __getattr__(name):
+    # features imports the preparation functions above; resolve the public alias lazily.
+    if name == 'EventLog':
+        from .features import EventLog
+        return EventLog
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

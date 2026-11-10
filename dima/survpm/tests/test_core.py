@@ -63,7 +63,7 @@ def test_censoring_lengthens_exponential_mean():
 def test_recovers_synthetic_parameters():
     raw, censoring = datasets.generate_ad(3000, seed=1)
     families = {(t["src"], t["dst"]): t["dist"][0] for t in datasets.AD_TRANSITIONS}
-    model = survpm.CensoredStateNet("A", "D", families=families).fit(raw, censoring["end"], censoring["reason"])
+    model = survpm.CensoredStateNet("A", "D", families=families, transition_mode="choice_then_time").fit(raw, censoring["end"], censoring["reason"])
     fitted = {(e["src"], e["dst"]): e for e in model.edges_}
     for truth in datasets.AD_TRANSITIONS:
         edge = fitted[(truth["src"], truth["dst"])]

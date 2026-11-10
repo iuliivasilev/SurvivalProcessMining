@@ -1,5 +1,117 @@
 # survpm
 
+## Первая итерация архитектуры v2
+
+`CensoredStateNet` по умолчанию использует `transition_mode="min_time"`:
+независимые экспоненциальные времена по исходящим рёбрам, переход по минимуму.
+Интенсивности обучаются с учётом цензуры; при признаках используется регрессия
+логарифма интенсивности. `coefficients_table()` возвращает колонку `rate`.
+Другие семейства в этом режиме пока отклоняются явно.
+
+```python
+import pandas as pd
+from survpm import (EventLog, Network, ProcessModel, ObjectStream, Simulator,
+                    discover, DirectlyFollowsBackend, Forecaster,
+                    evaluate, compare, compare_networks)
+
+origin = pd.Timestamp("2025-01-01", tz="UTC")
+events = pd.DataFrame([
+    ("a", "A", origin), ("a", "D", origin + pd.Timedelta(days=2)),
+    ("b", "A", origin), ("b", "D", origin + pd.Timedelta(days=4)),
+    ("c", "A", origin),  # ещё три дня экспозиции без исхода
+], columns=["case_id", "activity", "timestamp"])
+train = EventLog(events, pd.DataFrame(index=["a", "b", "c"]),
+                 pd.DataFrame(columns=["case_id", "timestamp", "feature", "value"]),
+                 last_seen=pd.Series({"c": origin + pd.Timedelta(days=3)}))
+network = Network.from_edges([("A", "D")], starts=["A"], terminals=["D"])
+model = ProcessModel(network).fit(train)  # новый объект, rate = 2/9 в день
+stream = ObjectStream([dict(case_id=f"sim-{i}", state="A", t=origin, X={})
+                       for i in range(30)])
+generated = Simulator(model, seed=42).run(stream, horizon=30)
+found = discover(generated, DirectlyFollowsBackend(starts=["A"], terminals=["D"]))
+print(compare_networks(network, found))
+print(Forecaster(model, n_paths=100, seed=42).survival(
+    generated, origin, [1., 7., 30.], case_id="sim-0"))
+print(evaluate(model, train, metrics=["nll"])["nll"])
+print(compare({"fitted": model}, train, metrics=["nll"]))
+```
+
+`ObjectStream` содержит один или несколько объектов. `updater(X, state, t, rng)`
+обновляет X только при входе в состояние. События, значения X и конец наблюдения
+возвращаются в `EventLog`; таблица причин остановки доступна в `log.observation`.
+`Router` и `Forecaster` читают признаки на входе в текущее состояние и ограничивают
+реальные наблюдения моментом `as_of`. Будущие X задаются `future_features`;
+по умолчанию значения сохраняются. Остаточное ожидание в первой итерации
+поддерживается только для экспоненциальных переходов.
+
+`Network`, `ProcessModel` и `TransitionModel` разделены; смена модели не требует
+переписывать `Simulator`. `fit` у `ProcessModel` и `ExponentialTransitionModel`
+возвращает новый объект; у совместимого `CensoredStateNet.fit` остаётся прежняя
+семантика изменения экземпляра. `ExponentialTransitionModel.update` переобучается
+на объединённых исходных и новых интервалах. `Evaluator` поддерживает NLL;
+другие существующие метрики доступны через `CensoredStateNet.evaluate`.
+
+В `CensoredStateNet.edges_` и `edges_table()` хранится наблюдаемое ядро:
+вероятность направления `lambda / sum(lambda)` и время до победившего события
+со средним `1 / sum(lambda)`. Времена отдельных конкурирующих причин имеют
+средние `1 / lambda`; интенсивности доступны в `model.transitions_.rates`.
+Поэтому существующие grid-кривые и адаптеры используют согласованное ядро.
+
+Старый алгоритм доступен явно через `transition_mode="choice_then_time"`.
+Ниже описаны его семейства и softmax/AFT; для воспроизведения старых экспериментов
+укажите этот режим. Синтетический `datasets.generate_ad` также использует старую
+семантику. LatentModel, точный прогноз движком Forecaster и прочие расширения
+архитектуры пока не реализованы.
+
+
+### Публичный API v2: возможности первой итерации
+
+Ядру примера нужны только numpy, pandas и scipy; Python ≥ 3.10.
+`evaluate(model, log, metrics=["nll"])` возвращает словарь таблиц `metric/value`:
+NLL содержит `nll_per_interval` и `nll_per_trace`. Цензурированные интервалы дают
+экспозицию, невозможный наблюдаемый переход — бесконечный NLL.
+`compare({name: model}, log, metrics)` объединяет результаты в `model/metric/value`.
+Также можно передать список или итератор: `compare([model], log, ["nll"])`;
+имена назначаются по порядку: `model_0`, `model_1`, … .
+`register_metric(name, func)` добавляет функцию `(model, log)` со скалярным
+результатом либо таблицей `metric/value`; повторное имя отклоняется. Этот реестр
+отделён от существующего реестра fold-метрик кросс-валидации.
+Оценка, сравнение и визуализация не обучают модели и признаки.
+
+`compare_networks(reference, estimated, state_mapping=None)` принимает `Network`
+или `ProcessModel` и сравнивает только направленные рёбра: precision, recall, f1
+и таблицы missing/extra. Отображение задаётся из имён estimated в имена reference;
+неуказанные имена сохраняются. Для пустого estimated precision = 1, для пустого
+reference recall = 1. Вероятности и параметры модели эта функция не сравнивает;
+у чистой `Network` вероятностей нет.
+
+| Компонент | Реализовано | Ограничение / заглушка |
+|---|---|---|
+| Данные | EventLog, prepare, intervals, prefix | Одна активная вершина на объект |
+| Структура | Network; DirectlyFollowsBackend без optional зависимостей | Общие Petri nets и параллелизм не поддержаны |
+| PM4Py | Pm4pyBackend(method="dfg") с ленивым импортом | inductive/heuristics явно NotImplementedError |
+| Переходы | Независимые exponential, минимум времён; log-rate с признаками, L2, update | Другие семейства и nonlinear-модели v2 не реализованы; старый choice_then_time сохраняется |
+| Признаки | DefaultHistoryFeatures, HistoryFeatures и FeatureUpdater protocols | LatentModel — только protocol; скрытое состояние не исполняется |
+| Исполнение | ObjectStream, Simulator, Router; фиксированные X или updater при входе | Marked point process и executor не реализованы |
+| Прогноз | Forecaster Monte Carlo: survival, terminal_probs, hazard по бинам, restricted mean | method="exact" явно NotImplementedError; expected_time требует конечный horizon |
+| Метрики v2 | NLL с цензурой; пользовательский registry; сравнение топологии | IBS явно NotImplementedError: требуется train-only IPCW; legacy cross-validation сохраняется |
+| Визуализация | Visualizer, MatplotlibVisualizer.plot_network и plot_edge_curves | compare_km и latent явно NotImplementedError; edge curves только exponential |
+
+Для рисунков отдельно установите `matplotlib`. `network.plot()` делегирует
+`MatplotlibVisualizer.plot_network(network)`; можно передать свой `Visualizer`.
+`MatplotlibVisualizer().plot_edge_curves(model, ("A", "D"), [0., 1., 7.])` рисует
+совместную CDF `P(следующий выход D, ожидание ≤ t)`: для exponential это
+`lambda_AD / sum(lambda_A*) * (1 - exp(-sum(lambda_A*) * t))`. Это кривая одного
+ожидания, а прогноз всего пути до исхода даёт `Forecaster`.
+`plot_network(model)` принимает также ProcessModel и рисует его network.
+Без times вызов `plot_edge_curves(model, ("A", "D"))` выбирает 101 точку
+от нуля до пяти средних времён ожидания выхода; при нулевой суммарной
+интенсивности — от нуля до пяти дней.
+`network` и `edge_curves` сохраняются как совместимые имена методов visualizer.
+`compare_km(model, log, edge)` пока явно отклоняется: реализация сравнения KM не включена.
+`survpm.log.EventLog` — совместимый ленивый импорт класса из `survpm.features`.
+
+
 Стохастические сети состояний с правым цензурированием, оцениваемые по журналам событий.
 Модель: из каждого состояния выход выбирается с вероятностью `p`, время перехода берётся из
 своего распределения (exponential, lognormal, gamma, weibull), а трассы, не дошедшие до
@@ -25,7 +137,7 @@ import survpm
 from survpm import datasets
 
 raw = datasets.load_sepsis("../Med_Eremina/Sepsis Cases - Event Log_grouped.csv")
-model = survpm.CensoredStateNet("Registration", "Discharge").fit(raw)
+model = survpm.CensoredStateNet("Registration", "Discharge", transition_mode="choice_then_time").fit(raw)
 
 model.edges_table()                  # p, распределение, среднее, медиана, 90% квантиль
 model.survival([1, 7, 30])           # P(не выписан к дню t), симуляция
@@ -61,7 +173,7 @@ net, im, fm = model.to_pm4py()       # сеть Петри PM4Py с местом
 log = survpm.read_log(path, case_id="case", activity="act", timestamp="time")
 # measurement_activities=["Lab"] — строки Lab станут только замерами, не состояниями (по умолчанию трассы полные)
 log.static, log.dynamic             # разобраны автоматически; можно задать static=[...], dynamic=[...]
-model = survpm.CensoredStateNet("A", "D").fit(log)    # цензура не раньше log.last_seen
+model = survpm.CensoredStateNet("A", "D", transition_mode="choice_then_time").fit(log)    # цензура не раньше log.last_seen
 
 X = survpm.features.at_entry(model.intervals_, log, window="1D")  # признаки на вход в состояние
 pieces = survpm.features.split(model.intervals_, log)            # куски между замерами (counting process)
@@ -83,7 +195,7 @@ Sepsis с признаками: `datasets.load_sepsis_log(path)` — трасс�
 
 ```python
 model = survpm.CensoredStateNet(
-    "Registration", "Discharge",
+    "Registration", "Discharge", transition_mode="choice_then_time",
     feature_columns=["Age", "CRP", "CRP_age", "history_visits"],
     l2=1.0,
 ).fit(train_log)                       # EventLog, отдельный от test_log
@@ -131,7 +243,7 @@ CV с признаками: `CrossValidator(..., feature_columns=[...]).add_metr
 ```python
 train, train_censoring = datasets.generate_ad(500, seed=1)
 test, test_censoring = datasets.generate_ad(200, seed=2)
-model = survpm.CensoredStateNet("A", "D").fit(train, train_censoring["end"])
+model = survpm.CensoredStateNet("A", "D", transition_mode="choice_then_time").fit(train, train_censoring["end"])
 
 results = model.evaluate(test, observation_end=test_censoring["end"])
 results["level4"]  # unseen_share, nll_per_interval, nll_per_trace

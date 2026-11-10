@@ -163,3 +163,29 @@ def draw_state_net(net, marking, final_marking, decorations=None, reason_labels=
             picture.node(str(id(place)), label=f"{token}Цензура\nCENS", xlabel="", shape="circle",
                          fixedsize="false", width="1.1", height="1.1", fontname=FONT, fontsize="12")
     return picture
+
+
+class Pm4pyBackend:
+    """Optional PM4Py DFG adapter for the single-active-state graph.
+
+    General Petri nets require an explicit safe state-graph conversion, so inductive
+    and heuristics discovery are deliberately unsupported here.
+    """
+    def __init__(self, method='dfg', starts=None, terminals=None):
+        self.method, self.starts, self.terminals = method, starts, terminals
+
+    def discover(self, log):
+        if self.method in ('inductive', 'heuristics', 'heu'):
+            raise NotImplementedError('General Petri discovery needs a safe state-graph conversion')
+        if self.method != 'dfg':
+            raise ValueError(f'Unknown discovery method: {self.method}')
+        import pm4py
+
+        from .network import Network
+        events = log.events
+        if self.starts is not None and self.terminals is not None:
+            rules = dict(log.rules or {}, starts=self.starts, terminals=self.terminals)
+            events = log.prepare(rules).events
+        dfg, starts, ends = pm4py.discover_dfg(to_pm4py_log(events))
+        return Network.from_edges(list(dfg), self.starts if self.starts is not None else list(starts),
+                                  self.terminals if self.terminals is not None else list(ends))

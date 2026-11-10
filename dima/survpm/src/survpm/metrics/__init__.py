@@ -6,3 +6,4 @@
 * :mod:`.likelihood` — уровень 4, −log L с цензурой;
 * :mod:`.crossval` — выбранные метрики на k фолдах: ``CrossValidator.add_metrics``.
 """
+from .api import Metric, register_metric, evaluate, compare, compare_networks

@@ -9,17 +9,27 @@ from .estimation import estimate_network, source_nll
 from .features import EventLog
 from .log import censoring_summary, intervals as make_intervals, prepare
 from .simulation import completion_times, simulate
+from .network import Network
+from .transitions import ExponentialTransitionModel
+from .process import ProcessModel
 
 
 class CensoredStateNet:
     """Стохастическая сеть состояний, оцениваемая по журналу с правой цензурой.
+
+    ``transition_mode="min_time"`` (по умолчанию) использует независимые
+    экспоненциальные времена и выбирает минимальное. ``choice_then_time`` сохраняет
+    прежнюю softmax/AFT модель. В min_time ``edges_`` описывает наблюдаемое ядро:
+    p = lambda/sum(lambda), время до победителя ~ Exp(sum(lambda)); интенсивности
+    конкурирующих причин доступны в ``transitions_.rates``.
 
     ``use_censoring=False`` — наивная оценка только по завершённым интервалам.
     ``families`` — словарь ``(src, dst) → семейство``; если не задан, выбирается по AIC
     из ``candidates``. ``repeats`` — что делать с повторами состояния подряд, см. :func:`prepare`
     (``"collapse"`` воспроизводит результаты до 28.10.2026).
 
-    ``feature_columns`` включает softmax/AFT по признакам на входе в состояние.
+    ``feature_columns`` включает log-rate регрессию в min_time или softmax/AFT
+    в choice_then_time по признакам на входе в состояние.
     Для обучения передайте EventLog или ``fit(intervals=..., X=...)``. ``feature_window``
     задаёт окно для счётчиков замеров; ``l2`` — штраф коэффициентов признаков.
 
@@ -31,7 +41,10 @@ class CensoredStateNet:
     """
 
     def __init__(self, start, terminal, use_censoring=True, families=None, candidates=CANDIDATE_FAMILIES,
-                 min_duration=1 / 1440, repeats="simultaneous", *, feature_columns=None, feature_window=None, l2=1.):
+                 min_duration=1 / 1440, repeats="simultaneous", *, feature_columns=None, feature_window=None, l2=1., transition_mode="min_time"):
+        if transition_mode not in ('min_time', 'choice_then_time'):
+            raise ValueError('transition_mode: min_time или choice_then_time')
+        self.transition_mode = transition_mode
         self.start, self.terminal, self.repeats = start, terminal, repeats
         self.use_censoring, self.families = use_censoring, families
         self.candidates, self.min_duration = candidates, min_duration
@@ -70,6 +83,24 @@ class CensoredStateNet:
             intervals = intervals.copy()
             intervals[self.feature_columns] = frame
         self.intervals_ = intervals
+        if self.transition_mode == 'min_time':
+            if any(f != 'exponential' for f in (self.families or {}).values()) or 'exponential' not in self.candidates:
+                raise NotImplementedError('min_time пока поддерживает только exponential')
+            self.network_ = Network.from_edges(intervals.loc[intervals.observed, ['src', 'dst']],
+                                              [self.start], [self.terminal])
+            selected = intervals if self.use_censoring else intervals.loc[intervals.observed]
+            frame = self._feature_frame(intervals, event_log, X) if self.feature_columns else None
+            self.transitions_ = ExponentialTransitionModel(l2=self.l2).fit(
+                selected, self.network_, frame.loc[selected.index] if frame is not None else None)
+            self.process_model_ = ProcessModel(self.network_, self.transitions_)
+            self.encoder_ = self.transitions_.encoder
+            self.edges_ = self.transitions_.winner_edges()
+            self.diagnostics_ = self.transitions_.diagnostics
+            self.families_ = {edge: 'exponential' for edge in self.transitions_.rates}
+            self.aic_table_ = pd.DataFrame()
+            self.stop_ = censoring_summary(intervals).set_index('src')['q_censored'].to_dict()
+            self.log_, self.cases_ = log, cases
+            return self
         self.families_, self.aic_table_ = select_families(intervals, self.candidates)
         if self.families:
             self.families_.update(self.families)
@@ -118,12 +149,23 @@ class CensoredStateNet:
             return copy(self)
         design = self.encoder_.transform(pd.DataFrame([values]))
         result = copy(self)
+        if self.transition_mode == 'min_time':
+            result.transitions_ = self.transitions_.condition(values)
+            result.edges_ = result.transitions_.winner_edges()
+            result.process_model_ = ProcessModel(self.network_, result.transitions_)
+            result.feature_columns = []
+            return result
         result.edges_ = covariates.condition_edges(self.edges_, design)
         result.feature_columns = []
         return result
 
     def coefficients_table(self):
         """Коэффициенты softmax и AFT для стандартизованных закодированных признаков."""
+        if self.transition_mode == 'min_time':
+            names = self.encoder_.names_ if self.encoder_ is not None else []
+            return pd.DataFrame([dict(transition=f'{src}→{dst}', feature=f, rate=b)
+                                 for (src, dst), coef in self.transitions_.coefficients.items()
+                                 for f, b in zip(names, coef)], columns=['transition', 'feature', 'rate'])
         return pd.DataFrame([dict(transition=e["name"], feature=f, choice=b, time=g)
                              for e in self.edges_ for f, b, g in
                              zip(self.encoder_.names_, e["choice_coef"], e["time_coef"])])
@@ -174,6 +216,26 @@ class CensoredStateNet:
     def simulate(self, n, seed=None, censoring=False, horizon=None):
         """Трассы ``[(states, times), ...]``; ``censoring=True`` — обрыв с наблюдаемой вероятностью ``q``."""
         self._require_profile()
+        if self.transition_mode == 'min_time' and hasattr(self, 'transitions_'):
+            rng = np.random.default_rng(seed)
+            traces = []
+            for i in range(n):
+                state, now, states, times = self.start, 0., [self.start], [0.]
+                for _ in range(1000):
+                    rates = self.transitions_.transition_parameters(state)
+                    if state == self.terminal or not any(rates.values()):
+                        break
+                    if censoring and rng.random() < self.stop_.get(state, 0.):
+                        break
+                    dst, dt = self.process_model_.next_transition(state, {}, [], rng)
+                    now += dt
+                    if horizon is not None and now > horizon[i]:
+                        break
+                    state = dst
+                    states.append(state)
+                    times.append(now)
+                traces.append((states, times))
+            return traces
         return simulate(self.edges_, self.start, self.terminal, n, seed,
                         stop=self.stop_ if censoring else None, horizon=horizon)
 
@@ -222,6 +284,12 @@ class CensoredStateNet:
         unseen = (observed & ~known) | (~observed & ~intervals["src"].isin(sources))
         unseen_cases = set(intervals.loc[unseen, "case_id"])
         kept = intervals.loc[~intervals["case_id"].isin(unseen_cases)]
+        if self.transition_mode == 'min_time':
+            frame = self._feature_frame(intervals, X=X).loc[kept.index] if self.feature_columns else None
+            value = -self.transitions_.log_likelihood(kept, frame)
+            return dict(unseen_share=len(unseen_cases)/intervals.case_id.nunique(),
+                        nll_per_interval=value/len(kept) if len(kept) else np.nan,
+                        nll_per_trace=value/kept.case_id.nunique() if len(kept) else np.nan)
         if self.feature_columns:
             design = self.encoder_.transform(self._feature_frame(intervals, X=X))
         nll = 0.

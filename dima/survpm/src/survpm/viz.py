@@ -35,3 +35,85 @@ def state_graph(intervals, start, terminal, title=None, reason_labels=None):
     if title:
         graph.attr(label=title)
     return graph
+
+
+from typing import Protocol
+
+
+class Visualizer(Protocol):
+    def plot_network(self, network, **kwargs): ...
+    def plot_edge_curves(self, model, edge, times=None, **kwargs): ...
+    def compare_km(self, model, log, edge): ...
+    def network(self, network, **kwargs): ...
+    def edge_curves(self, model, src, dst, times, **kwargs): ...
+
+
+class MatplotlibVisualizer:
+    """Optional plots. Import matplotlib only when actually drawing."""
+    def network(self, network, ax=None):
+        """Draw directed topology on a circle, without invented edge probabilities."""
+        import numpy as np
+        import matplotlib.pyplot as plt
+        if ax is None:
+            _, ax = plt.subplots()
+        states = network.states
+        positions = {s: (np.cos(t), np.sin(t)) for s, t in
+                     zip(states, np.linspace(0, 2*np.pi, len(states), endpoint=False))}
+        for src, dst in network.edges[['src', 'dst']].itertuples(index=False, name=None):
+            a, b = positions[src], positions[dst]
+            if src == dst:
+                ax.text(a[0], a[1]+.16, '↺', ha='center')
+            else:
+                ax.annotate('', xy=b, xytext=a,
+                            arrowprops=dict(arrowstyle='->', shrinkA=18, shrinkB=18))
+        for state, (x, y) in positions.items():
+            ax.text(x, y, str(state), ha='center', va='center',
+                    bbox=dict(boxstyle='circle', facecolor='white'))
+        ax.set(xlim=(-1.4, 1.4), ylim=(-1.4, 1.4), aspect='equal')
+        ax.axis('off')
+        return ax
+
+    def edge_curves(self, model, src, dst, times, X=None, ax=None):
+        """Plot P(next destination=dst, waiting time<=t) under minimum-time races."""
+        import numpy as np
+        from .transitions import ExponentialTransitionModel
+        if not isinstance(model.transitions, ExponentialTransitionModel):
+            raise NotImplementedError('Edge curves currently support exponential transitions only')
+        times = np.asarray(times, dtype=float)
+        if times.ndim != 1 or not np.isfinite(times).all() or (times < 0).any() or (np.diff(times) < 0).any():
+            raise ValueError('times must be finite, nonnegative and increasing')
+        if dst not in model.network.outgoing(src):
+            raise ValueError('Edge is absent from the network')
+        rates = model.transition_parameters(src, X)
+        total = sum(rates.values())
+        values = rates.get(dst, 0.)/total*(-np.expm1(-total*times)) if total else np.zeros_like(times)
+        import matplotlib.pyplot as plt
+        if ax is None:
+            _, ax = plt.subplots()
+        ax.plot(times, values, label=f'{src}→{dst}')
+        ax.set(xlabel='Days', ylabel='Joint transition CDF', ylim=(0, 1))
+        return ax
+
+    def plot_network(self, network, **kwargs):
+        return self.network(getattr(network, 'network', network), **kwargs)
+
+    def plot_edge_curves(self, model, edge, times=None, **kwargs):
+        """Plot an edge tuple on a supplied grid or 101 points over five mean waits.
+
+        With no positive exit rate, the default grid spans zero to five days.
+        """
+        src, dst = edge
+        if times is None:
+            import numpy as np
+            from .transitions import ExponentialTransitionModel
+            if not isinstance(model.transitions, ExponentialTransitionModel):
+                raise NotImplementedError('Edge curves currently support exponential transitions only')
+            total = sum(model.transition_parameters(src, kwargs.get('X')).values())
+            times = np.linspace(0., 5/total if total else 5., 101)
+        return self.edge_curves(model, src, dst, times, **kwargs)
+
+    def compare_km(self, model, log, edge):
+        raise NotImplementedError('KM comparison visualization is not implemented')
+
+    def latent(self, model, **kwargs):
+        raise NotImplementedError('Latent visualization is not implemented')
