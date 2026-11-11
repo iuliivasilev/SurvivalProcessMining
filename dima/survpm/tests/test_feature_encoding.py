@@ -101,3 +101,12 @@ def test_process_model_fit_with_features_is_consistent():
     assert list(model.transitions.encoder.columns_) == ['age', 'crp']
     assert np.isfinite(model.transitions.log_likelihood(
         log.intervals(), entry_features(log, log.events, log.intervals(), model.history_features, ['age', 'crp'])))
+
+
+def test_missing_feature_at_prediction_is_treated_as_missing():
+    log = sample_log()
+    network = Network.from_edges([('A', 'B'), ('B', 'B'), ('B', 'D'), ('A', 'D')], ['A'], ['D'])
+    model = ProcessModel(network).fit(log, features=['age', 'crp'])
+    without = model.transition_parameters('A', {'age': 60})
+    explicit = model.transition_parameters('A', {'age': 60, 'crp': np.nan})
+    assert without == pytest.approx(explicit)

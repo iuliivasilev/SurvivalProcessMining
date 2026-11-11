@@ -117,6 +117,11 @@ class ExponentialTransitionModel:
         """Scalar X gives destination rates; a DataFrame gives one dict per row."""
         batch = isinstance(X, pd.DataFrame)
         frame = X if batch else pd.DataFrame([{} if X is None else X])
+        if self.encoder is not None and not batch:
+            # Контекст объекта (dict от HistoryFeatures/Simulator): признака нет, если анализ ещё
+            # не делали на момент входа. Это пропуск, как при обучении: медиана + индикатор.
+            # Таблица-батч проверяется строго.
+            frame = frame.reindex(columns=self.encoder.columns_)
         design = self.encoder.transform(frame) if self.encoder is not None else np.empty((len(frame), 0))
         result = [{dst: rate*float(np.exp(np.clip(
                        self.coefficients.get((src, dst), np.zeros(len(row))) @ row, -60, 60)))

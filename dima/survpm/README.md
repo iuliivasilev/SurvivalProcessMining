@@ -187,7 +187,7 @@ pieces = survpm.features.split(model.intervals_, log)            # куски м
 
 Sepsis с признаками: `datasets.load_sepsis_log(path)` — трассы полные, Examination остаётся состоянием,
 значения анализов дополнительно в `measurements`; `measurement_activities=datasets.SEPSIS_MEASUREMENTS`
-делает Examination прозрачной. Проверка — `features_sepsis.ipynb`.
+делает Examination прозрачной. Пример — `petri_net_time_estimation_sepsis.ipynb`.
 
 ### Обучение с признаками
 
