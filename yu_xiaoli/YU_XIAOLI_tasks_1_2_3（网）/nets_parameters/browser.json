@@ -1,0 +1,78 @@
+{
+  "profile": "browser",
+  "family": "exponential",
+  "time_unit": "hour",
+  "parameter_status": "specified_not_estimated",
+  "note": "旁听：几乎只看 video/access，很少做题，少量事件后容易流失。设定参数，不是 KDD 估计。",
+  "absorbing": ["active", "dropout"],
+  "transitions": {
+    "start": {
+      "video": {"prob": 0.55, "rate": 0.50},
+      "problem": {"prob": 0.03, "rate": 0.50},
+      "access": {"prob": 0.30, "rate": 0.50},
+      "wiki": {"prob": 0.02, "rate": 0.50},
+      "discussion": {"prob": 0.02, "rate": 0.50},
+      "navigate": {"prob": 0.08, "rate": 0.50}
+    },
+    "video": {
+      "video": {"prob": 0.45, "rate": 0.50},
+      "problem": {"prob": 0.05, "rate": 0.40},
+      "access": {"prob": 0.20, "rate": 0.45},
+      "wiki": {"prob": 0.02, "rate": 0.40},
+      "discussion": {"prob": 0.02, "rate": 0.40},
+      "navigate": {"prob": 0.06, "rate": 0.40},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.15, "rate": 0.25}
+    },
+    "problem": {
+      "video": {"prob": 0.35, "rate": 0.40},
+      "problem": {"prob": 0.10, "rate": 0.35},
+      "access": {"prob": 0.15, "rate": 0.40},
+      "wiki": {"prob": 0.02, "rate": 0.35},
+      "discussion": {"prob": 0.03, "rate": 0.35},
+      "navigate": {"prob": 0.05, "rate": 0.35},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.25, "rate": 0.20}
+    },
+    "access": {
+      "video": {"prob": 0.40, "rate": 0.45},
+      "problem": {"prob": 0.04, "rate": 0.35},
+      "access": {"prob": 0.25, "rate": 0.45},
+      "wiki": {"prob": 0.03, "rate": 0.40},
+      "discussion": {"prob": 0.02, "rate": 0.40},
+      "navigate": {"prob": 0.06, "rate": 0.40},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.15, "rate": 0.25}
+    },
+    "wiki": {
+      "video": {"prob": 0.40, "rate": 0.40},
+      "problem": {"prob": 0.05, "rate": 0.35},
+      "access": {"prob": 0.20, "rate": 0.40},
+      "wiki": {"prob": 0.05, "rate": 0.35},
+      "discussion": {"prob": 0.05, "rate": 0.35},
+      "navigate": {"prob": 0.05, "rate": 0.35},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.15, "rate": 0.25}
+    },
+    "discussion": {
+      "video": {"prob": 0.35, "rate": 0.40},
+      "problem": {"prob": 0.05, "rate": 0.35},
+      "access": {"prob": 0.20, "rate": 0.40},
+      "wiki": {"prob": 0.05, "rate": 0.35},
+      "discussion": {"prob": 0.05, "rate": 0.35},
+      "navigate": {"prob": 0.05, "rate": 0.35},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.20, "rate": 0.25}
+    },
+    "navigate": {
+      "video": {"prob": 0.40, "rate": 0.40},
+      "problem": {"prob": 0.05, "rate": 0.35},
+      "access": {"prob": 0.20, "rate": 0.40},
+      "wiki": {"prob": 0.03, "rate": 0.35},
+      "discussion": {"prob": 0.02, "rate": 0.35},
+      "navigate": {"prob": 0.05, "rate": 0.35},
+      "active": {"prob": 0.05, "rate": 0.30},
+      "dropout": {"prob": 0.20, "rate": 0.25}
+    }
+  }
+}
