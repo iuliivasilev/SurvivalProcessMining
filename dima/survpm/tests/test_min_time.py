@@ -61,9 +61,10 @@ def test_stream_updates_at_entry_records_x_and_horizon():
     log = survpm.Simulator(model, seed=1).run(stream, horizon=10.)
     assert log.events.activity.tolist() == ['A', 'B', 'D']
     assert log.measurements.loc[log.measurements.feature == 'x', 'value'].tolist() == [1, 2, 3]
-    assert stream.current('one')[0] == 'D'
-    with pytest.raises(ValueError, match='свеж|fresh'):
-        survpm.Simulator(model).run(stream)
+    # Поток многоразовый: движок исполняет копию, повтор с тем же seed даёт тот же журнал.
+    assert stream.current('one')[0] == 'A'
+    again = survpm.Simulator(model, seed=1).run(stream, horizon=10.)
+    pd.testing.assert_frame_equal(again.events, log.events)
     short = survpm.ObjectStream(pd.DataFrame([dict(case_id='two', state='A', t=pd.Timestamp('2025-01-01', tz='UTC'), X={})]))
     censored = survpm.Simulator(model, seed=1).run(short, horizon=0.)
     assert censored.events.activity.tolist() == ['A']

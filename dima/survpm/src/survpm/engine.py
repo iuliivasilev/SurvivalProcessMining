@@ -7,7 +7,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from .features import EventLog
+from .eventlog import EventLog
 from .models.features import DefaultHistoryFeatures as HistoryFeatures
 
 DAY = pd.Timedelta(days=1)
@@ -36,7 +36,28 @@ class ObjectStream:
             row['X'] = dict(row.get('X', {}))
             row['history'] = list(row.get('history', []))
         self.updater = updater or (lambda X, state, t, rng: dict(X))
-        self._started = False
+
+    @classmethod
+    def start(cls, n, state, t, X=None, prefix='case-', updater=None, seed=None):
+        """``n`` новых объектов в состоянии ``state`` в момент ``t`` с признаками ``X``."""
+        return cls([dict(case_id=f'{prefix}{i}', state=state, t=t, X=dict(X or {})) for i in range(n)],
+                   updater, seed)
+
+    @classmethod
+    def from_log(cls, log, state=None, X=None, prefix='', updater=None, seed=None):
+        """Объекты журнала стартуют заново: момент — первое событие объекта, состояние —
+        ``state`` или первое событие. ``X`` — общий словарь признаков или функция ``case_id → dict``."""
+        first = log.events.sort_values('timestamp', kind='stable').groupby('case_id', sort=False).head(1)
+        rows = []
+        for row in first.itertuples():
+            features = X(row.case_id) if callable(X) else dict(X or {})
+            rows.append(dict(case_id=f'{prefix}{row.case_id}', state=state or row.activity,
+                             t=row.timestamp, X=features))
+        return cls(rows, updater, seed)
+
+    def records(self):
+        """Независимая копия объектов потока (движок исполняет её, сам поток не меняется)."""
+        return deepcopy(self._objects)
 
     @property
     def objects(self):
@@ -64,8 +85,8 @@ class Simulator:
         self.model, self.seed, self.executor = model, seed, executor
 
     def run(self, stream, horizon=None, max_steps=1000):
-        if stream._started:
-            raise ValueError('Передайте свежий ObjectStream для нового запуска')
+        """Журнал :class:`EventLog` из объектов потока; поток не меняется и годится для повтора."""
+        objects = stream.records()
         if horizon is not None and (not np.isfinite(horizon) or horizon < 0):
             raise ValueError('horizon должен быть конечным и неотрицательным')
         if max_steps is not None and (not isinstance(max_steps, (int, np.integer)) or max_steps < 1):
@@ -83,16 +104,15 @@ class Simulator:
                 active.remove(state)
                 visited.add(state)
                 return False
-            if any(cycle(row['state']) for row in stream._objects):
+            if any(cycle(row['state']) for row in objects):
                 raise ValueError('Reachable cycles require horizon or max_steps')
         # A stream seed is a fallback; two explicit seeds are ambiguous.
         if self.seed is not None and stream.seed is not None:
             raise ValueError('Specify seed on the engine or stream, not both')
         seed = self.seed if self.seed is not None else stream.seed
         entropy = np.random.SeedSequence(seed).entropy
-        stream._started = True
         events, measurements, observations, last_seen = [], [], [], {}
-        for row in stream._objects:
+        for row in objects:
             # Built-in hash is process-randomized; digest canonical case identity.
             identity = json.dumps([type(row['case_id']).__name__, row['case_id']],
                                   default=str, ensure_ascii=False).encode('utf-8')
@@ -140,7 +160,7 @@ class Simulator:
             observations.append(dict(case_id=row['case_id'], end=row['t'], reason=reason,
                                      event=int(row['state'] in self.model.network.terminals)))
         log = EventLog(pd.DataFrame(events, columns=['case_id', 'activity', 'timestamp']),
-                       pd.DataFrame(index=pd.Index([r['case_id'] for r in stream._objects], name='case_id')),
+                       pd.DataFrame(index=pd.Index([r['case_id'] for r in objects], name='case_id')),
                        pd.DataFrame(measurements, columns=['case_id', 'timestamp', 'feature', 'value']),
                        pd.Series(last_seen), pd.DataFrame(observations, columns=['case_id', 'end', 'event', 'reason']))
         return log

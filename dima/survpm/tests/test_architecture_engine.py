@@ -58,7 +58,7 @@ def test_stream_dataframe_and_case_seed_do_not_depend_on_input_order():
         stream = survpm.ObjectStream(initial(ids), seed=9)
         assert isinstance(stream.objects, pd.DataFrame)
         result = survpm.Simulator(model).run(stream)
-        assert (stream.objects.state == 'D').all()
+        assert (stream.objects.state == 'A').all()  # поток не меняется движком
         return result.events.sort_values(['case_id', 'timestamp']).reset_index(drop=True)
     pd.testing.assert_frame_equal(run(['a', 'b']), run(['b', 'a']))
     with pytest.raises(ValueError, match='seed'):

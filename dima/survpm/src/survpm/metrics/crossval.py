@@ -19,7 +19,7 @@ from sklearn.model_selection import StratifiedKFold
 
 from ..log import intervals as make_intervals, prepare
 from ..model import CensoredStateNet
-from ..features import EventLog
+from ..eventlog import EventLog
 from .fold import Fold, per_model  # noqa: F401  (часть API crossval)
 from .registry import LEVELS, METRICS, LEVEL_OF, _expand
 
@@ -37,7 +37,7 @@ class CrossValidator:
     Метрик по умолчанию нет: их добавляет :meth:`add_metrics`.
     """
 
-    def __init__(self, start, terminal, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000, repeats="simultaneous",
+    def __init__(self, start=None, terminal=None, k=5, seed=2026, min_duration=1 / 1440, n_sim=5000, repeats="simultaneous",
                  *, feature_columns=None, feature_window=None, l2=1.):
         self.start, self.terminal, self.k, self.seed = start, terminal, k, seed
         self.min_duration, self.n_sim, self.repeats = min_duration, n_sim, repeats
@@ -79,6 +79,13 @@ class CrossValidator:
         if not self.metrics:
             raise ValueError("Метрики не выбраны: add_metrics('all'), add_metrics('level3'), add_metrics('km_sup') …")
         event_log = raw if isinstance(raw, EventLog) else None
+        if self.start is None or self.terminal is None:
+            from ..eventlog import process_bounds
+            if event_log is None:
+                raise ValueError("Задайте start/terminal или передайте EventLog после prepare(rules)")
+            starts, terminals = process_bounds(event_log, self.start, self.terminal)
+            self.start = starts[0] if len(starts) == 1 else starts
+            self.terminal = terminals[0] if len(terminals) == 1 else terminals
         if event_log is not None:
             observation_end = event_log.last_seen if observation_end is None else \
                 pd.concat([event_log.last_seen, observation_end], axis=1).max(axis=1)

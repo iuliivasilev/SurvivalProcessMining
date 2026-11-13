@@ -6,9 +6,9 @@ import numpy as np
 
 import pandas as pd
 
-from .features import EventLog
+from .eventlog import EventLog
 from .log import prepare, intervals
-from .transitions import ExponentialTransitionModel
+from .models.transitions import ExponentialTransitionModel
 from .models.features import DefaultHistoryFeatures
 
 
@@ -45,7 +45,13 @@ def entry_features(log, events, iv, builder, columns):
 
 
 class ProcessModel:
-    def __init__(self, network, transitions=None, history_features=None, picker=None):
+    """Сеть + модель переходов + признаки истории.
+
+    ``network=None`` — сеть строится в :meth:`fit` как DFG по журналу (``starts``/``terminals``
+    из ``log.rules``). После ``fit`` модели доступны сеть Петри (:meth:`to_pm4py`), все метрики
+    библиотеки (:meth:`evaluate`), рисунки (:meth:`plot`) и сохранение (:meth:`save`/:meth:`load`).
+    """
+    def __init__(self, network=None, transitions=None, history_features=None, picker=None):
         self.network = network
         self.transitions = transitions if transitions is not None else ExponentialTransitionModel()
         if picker is not None:
@@ -55,6 +61,12 @@ class ProcessModel:
         self.history_features = history_features if history_features is not None else DefaultHistoryFeatures()
 
     def fit(self, log, features=None, use_censoring=True):
+        if self.network is None:
+            if not isinstance(log, EventLog):
+                raise ValueError('Без сети передайте EventLog после prepare(rules): сеть строится по нему')
+            from .discovery import discover
+            self = copy(self)
+            self.network = discover(log)
         if isinstance(log, EventLog):
             rules = dict(log.rules or {}, starts=self.network.starts, terminals=self.network.terminals)
             train_log = log.prepare(rules)
@@ -126,3 +138,73 @@ class ProcessModel:
                                  rate=rate, p=rate/total if total else 0.,
                                  mean_days=1/total if total else np.inf))
         return pd.DataFrame(rows, columns=['src', 'dst', 'n_completed', 'n_visits', 'rate', 'p', 'mean_days'])
+
+    # --- мост к сети Петри и метрикам уровней 1–4 -------------------------------------------
+    def legacy(self, train=None):
+        """Эквивалентный :class:`~survpm.model.CensoredStateNet` с теми же интенсивностями.
+
+        Нужен метрикам уровней 1–3 и экспорту в PM4Py; модель не переобучается: берутся
+        ``self.transitions``. ``train`` — обучающий журнал, если модель не обучалась через
+        :meth:`fit` (например, истина с заданными rates).
+        """
+        from .model import CensoredStateNet
+        if getattr(self, 'feature_columns', None):
+            raise NotImplementedError('Сеть Петри и метрики уровней 1–3 пока только для модели без признаков; '
+                                      'для неё доступна NLL: evaluate(model, log, "nll")')
+        if not hasattr(self.transitions, 'winner_edges'):
+            raise NotImplementedError('Нужна модель переходов с winner_edges (ExponentialTransitionModel)')
+        train = train if train is not None else getattr(self, 'train_log', None)
+        if train is None:
+            raise ValueError('Модель не обучена: передайте train= (журнал, на котором считать обучающие таблицы)')
+        if len(self.network.starts) != 1 or len(self.network.terminals) != 1:
+            raise NotImplementedError('Сеть Петри и метрики уровней 1–3 — для одного начала и одного терминала')
+        rules = dict(train.rules or {})
+        result = CensoredStateNet(self.network.starts[0], self.network.terminals[0],
+                                  repeats=rules.get('repeats', 'simultaneous'),
+                                  min_duration=rules.get('min_duration', 1 / 1440)).fit(train)
+        result.network_, result.transitions_, result.process_model_ = self.network, self.transitions, self
+        result.edges_ = self.transitions.winner_edges()
+        result.families_ = {(e['src'], e['dst']): 'exponential' for e in result.edges_}
+        if hasattr(self.transitions, 'diagnostics'):
+            result.diagnostics_ = self.transitions.diagnostics
+        return result
+
+    def to_pm4py(self, censoring=True, train=None):
+        """``(net, initial_marking, final_marking)`` PM4Py: сеть состояний с местом ``CENS``."""
+        return self.legacy(train).to_pm4py(censoring)
+
+    def to_sdfa(self, censoring=False, digits=3, train=None):
+        """Стохастический автомат для Ebi."""
+        return self.legacy(train).to_sdfa(censoring, digits)
+
+    def evaluate(self, log, metrics='nll', train=None):
+        """Метрики на журнале ``log``; см. :func:`survpm.metrics.evaluate`."""
+        from .metrics.api import evaluate
+        return evaluate(self, log, metrics, train=train)
+
+    def plot(self, kind='network', visualizer=None, **kwargs):
+        """Рисунок модели: ``kind="network"`` (сеть с rate и p) или ``"petri"`` (сеть Петри с CENS)."""
+        if visualizer is None:
+            from .viz import GraphvizVisualizer
+            visualizer = GraphvizVisualizer()
+        if kind == 'network':
+            return visualizer.plot_network(self, **kwargs)
+        if kind == 'petri':
+            return visualizer.plot_petri(self, **kwargs)
+        raise ValueError(f'kind: network или petri, получено {kind!r}')
+
+    def save(self, path):
+        """Сохранить модель целиком (pickle). Загружать только из доверенных файлов."""
+        import pickle
+        with open(path, 'wb') as file:
+            pickle.dump(self, file)
+
+    @classmethod
+    def load(cls, path):
+        """Загрузить модель, сохранённую :meth:`save` (pickle: только доверенные файлы)."""
+        import pickle
+        with open(path, 'rb') as file:
+            model = pickle.load(file)
+        if not isinstance(model, cls):
+            raise TypeError(f'В файле не {cls.__name__}')
+        return model

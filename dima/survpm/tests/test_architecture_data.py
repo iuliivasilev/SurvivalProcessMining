@@ -152,10 +152,11 @@ def test_network_reports_cycles_without_terminal_path_and_isolated_start():
 
 def test_pm4py_backend_rejects_general_petri_without_optional_import():
     from survpm.adapters import Pm4pyBackend
+    loaded = 'pm4py' in sys.modules  # другие тесты могли уже импортировать pm4py
     for method in ('inductive', 'heuristics', 'heu'):
         with pytest.raises(NotImplementedError, match='state|Petri'):
             Pm4pyBackend(method=method).discover(sample())
-    assert 'pm4py' not in sys.modules
+    assert loaded or 'pm4py' not in sys.modules
 
 
 def test_pm4py_dfg_optional_dependency_error():

@@ -22,10 +22,12 @@ class Network:
         return cls(table, list(starts), list(terminals))
 
     @classmethod
-    def discover(cls, log, starts, terminals):
-        from .features import EventLog
+    def discover(cls, log, starts=None, terminals=None):
+        """DFG по журналу; без ``starts``/``terminals`` они берутся из ``log.rules``."""
+        from .eventlog import EventLog, process_bounds
         from .log import prepare, intervals
         if isinstance(log, EventLog):
+            starts, terminals = process_bounds(log, starts, terminals)
             rules = dict(log.rules or {}, starts=starts, terminals=terminals)
             iv = log.prepare(rules).intervals()
         else:

@@ -23,10 +23,10 @@ def sample():
 def test_nll_censored_exposure_and_no_refit():
     network, log = sample()
     model = survpm.ProcessModel(network, survpm.ExponentialTransitionModel({('A', 'D'): .5}))
-    result = survpm.evaluate(model, log)['nll'].set_index('metric').value
+    result = survpm.evaluate(model, log).set_index('metric').value
     assert result['nll_per_interval'] == pytest.approx((2.5 + np.log(2))/2)
     table = survpm.compare({'manual': model}, log, ['nll'])
-    assert list(table.columns) == ['model', 'metric', 'value']
+    assert list(table.columns) == ['level', 'model', 'metric', 'value']
     assert table.model.tolist() == ['manual', 'manual']
     assert table.value.tolist() == pytest.approx(result.tolist())
     assert model.transitions.rates == {('A', 'D'): .5}
@@ -45,7 +45,7 @@ def test_evaluate_preserves_prepared_repeat_and_duration_rules(repeats, expected
     model = survpm.ProcessModel(network, survpm.ExponentialTransitionModel({('A', 'A'): 1., ('A', 'D'): 1.}))
     direct_nll = -model.transitions.log_likelihood(prepared.intervals())
     assert direct_nll == pytest.approx(expected_nll)
-    result = survpm.evaluate(model, prepared)['nll'].set_index('metric').value
+    result = survpm.evaluate(model, prepared).set_index('metric').value
     assert result['nll_per_trace'] == pytest.approx(direct_nll)
     assert result['nll_per_interval'] == pytest.approx(expected_nll/count)
     assert model.transitions.rates == {('A', 'A'): 1., ('A', 'D'): 1.}
@@ -56,13 +56,16 @@ def test_metric_registry_and_errors():
     network, log = sample()
     model = survpm.ProcessModel(network)
     survpm.register_metric('api_case_count', lambda model, log: log.events.case_id.nunique())
-    assert survpm.evaluate(model, log, ['api_case_count'])['api_case_count'].value.tolist() == [2]
+    custom = survpm.evaluate(model, log, ['api_case_count'])
+    assert custom.value.tolist() == [2] and custom.level.tolist() == ['custom']
     with pytest.raises(ValueError, match='registered'):
         survpm.register_metric('api_case_count', lambda model, log: 0)
+    with pytest.raises(ValueError, match='registered'):
+        survpm.register_metric('km_sup', lambda model, log: 0)
     with pytest.raises(ValueError, match='Unknown'):
         survpm.evaluate(model, log, ['absent_metric'])
-    with pytest.raises(NotImplementedError, match='IPCW'):
-        survpm.evaluate(model, log, ['ibs'])
+    with pytest.raises(ValueError, match='train'):
+        survpm.evaluate(model, log, ['level4'])  # уровни 1–4 требуют обученную модель или train=
 
 
 def test_network_comparison_mapping_and_empty():
@@ -94,7 +97,7 @@ def test_roundtrip_and_public_imports():
     estimate = survpm.Forecaster(model, n_paths=5, seed=7).survival(
         generated, pd.Timestamp('2025-01-01', tz='UTC'), [1., 2.], case_id='new')
     assert estimate.survival.between(0, 1).all()
-    assert np.isfinite(survpm.evaluate(model, train)['nll'].value).all()
+    assert np.isfinite(survpm.evaluate(model, train).value).all()
 
 
 def test_public_import_does_not_load_optional_dependencies():
@@ -137,7 +140,7 @@ def test_compare_accepts_model_iterable_with_stable_labels():
     table = survpm.compare(iter([model, model]), log, ['nll'])
     assert table.model.tolist() == ['model_0', 'model_0', 'model_1', 'model_1']
     assert table.value.tolist() == pytest.approx([(2.5 + np.log(2))/2]*4)
-    assert survpm.compare([], log).columns.tolist() == ['model', 'metric', 'value']
+    assert survpm.compare([], log).columns.tolist() == ['level', 'model', 'metric', 'value']
 
 
 def test_required_visualizer_interface_and_network_plot_delegate():

@@ -182,10 +182,15 @@ class Pm4pyBackend:
         import pm4py
 
         from .network import Network
+        from .eventlog import process_bounds
         events = log.events
-        if self.starts is not None and self.terminals is not None:
-            rules = dict(log.rules or {}, starts=self.starts, terminals=self.terminals)
-            events = log.prepare(rules).events
+        try:
+            bounds = process_bounds(log, self.starts, self.terminals)
+        except ValueError:
+            bounds = None  # без правил — начала и концы, найденные PM4Py
+        if bounds is not None:
+            events = log.prepare(dict(log.rules or {}, starts=bounds[0], terminals=bounds[1])).events
         dfg, starts, ends = pm4py.discover_dfg(to_pm4py_log(events))
-        return Network.from_edges(list(dfg), self.starts if self.starts is not None else list(starts),
-                                  self.terminals if self.terminals is not None else list(ends))
+        if bounds is None:
+            bounds = (list(starts), list(ends))
+        return Network.from_edges(list(dfg), *bounds)

@@ -127,8 +127,8 @@ def censoring_summary(intervals):
 
 
 def __getattr__(name):
-    # features imports the preparation functions above; resolve the public alias lazily.
+    # eventlog imports the preparation functions above; resolve the public alias lazily.
     if name == 'EventLog':
-        from .features import EventLog
+        from .eventlog import EventLog
         return EventLog
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

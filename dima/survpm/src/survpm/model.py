@@ -6,11 +6,11 @@ from . import adapters, covariates, features
 from .curves import completion_cdf, curves_table, residual_cdf
 from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, select_families
 from .estimation import estimate_network, source_nll
-from .features import EventLog
+from .eventlog import EventLog
 from .log import censoring_summary, intervals as make_intervals, prepare
 from .simulation import completion_times, simulate
 from .network import Network
-from .transitions import ExponentialTransitionModel
+from .models.transitions import ExponentialTransitionModel
 from .process import ProcessModel
 
 
@@ -40,7 +40,7 @@ class CensoredStateNet:
         model.survival([1, 7, 30])
     """
 
-    def __init__(self, start, terminal, use_censoring=True, families=None, candidates=CANDIDATE_FAMILIES,
+    def __init__(self, start=None, terminal=None, use_censoring=True, families=None, candidates=CANDIDATE_FAMILIES,
                  min_duration=1 / 1440, repeats="simultaneous", *, feature_columns=None, feature_window=None, l2=1., transition_mode="min_time"):
         if transition_mode not in ('min_time', 'choice_then_time'):
             raise ValueError('transition_mode: min_time или choice_then_time')
@@ -68,6 +68,7 @@ class CensoredStateNet:
         должен содержать выбранные колонки и иметь тот же индекс, что интервалы.
         """
         event_log = raw if isinstance(raw, EventLog) else None
+        self._bounds_from(event_log)
         if isinstance(raw, EventLog):
             seen = raw.last_seen if observation_end is None else \
                 pd.concat([raw.last_seen, observation_end], axis=1).max(axis=1)
@@ -117,6 +118,17 @@ class CensoredStateNet:
         self.stop_ = censoring_summary(intervals).set_index("src")["q_censored"].to_dict()
         self.log_, self.cases_ = log, cases
         return self
+
+    def _bounds_from(self, log):
+        """START/TERMINAL из ``log.rules``, если они не заданы в конструкторе."""
+        if self.start is not None and self.terminal is not None:
+            return
+        from .eventlog import process_bounds
+        if log is None:
+            raise ValueError("Задайте start/terminal или передайте EventLog после prepare(rules)")
+        starts, terminals = process_bounds(log, self.start, self.terminal)
+        self.start = starts[0] if len(starts) == 1 else starts
+        self.terminal = terminals[0] if len(terminals) == 1 else terminals
 
     def _feature_frame(self, intervals, log=None, X=None):
         if X is not None:
