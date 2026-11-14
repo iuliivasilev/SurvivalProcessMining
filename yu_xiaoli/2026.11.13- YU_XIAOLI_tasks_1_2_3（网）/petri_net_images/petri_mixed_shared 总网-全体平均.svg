@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="520" viewBox="0 0 860 520">
+<rect width="100%" height="100%" fill="white"/>
+<text x="430" y="28" text-anchor="middle" font-size="18" font-family="Arial" fill="#222">Petri net — shared / mixed (average over all clients)</text>
+<defs>
+<marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+<polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+</marker>
+</defs>
+<path d="M 240.0,202.0 C 275.0,150.0 165.0,150.0 200.0,202.0" fill="none" stroke="#888" stroke-width="1.04" marker-end="url(#arrow)"/>
+<text x="220.0" y="142.0" text-anchor="middle" font-size="9" fill="#444">p=0.18, λ=0.41</text>
+<path d="M 247.8,216.7 Q 472.1,207.9 692.2,163.3" fill="none" stroke="#2f7d4a" stroke-width="0.65" marker-end="url(#arrow)"/>
+<text x="472.1" y="203.9" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.28</text>
+<path d="M 229.8,246.2 Q 233.1,306.3 270.2,353.8" fill="none" stroke="#555555" stroke-width="0.66" marker-end="url(#arrow)"/>
+<text x="233.1" y="302.3" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.44</text>
+<path d="M 247.0,227.5 Q 465.1,307.3 693.0,352.5" fill="none" stroke="#b33a3a" stroke-width="0.80" marker-end="url(#arrow)"/>
+<text x="465.1" y="303.3" text-anchor="middle" font-size="8" fill="#333">p=0.12 λ=0.19</text>
+<path d="M 243.8,234.7 Q 340.6,315.3 456.2,365.3" fill="none" stroke="#555555" stroke-width="0.84" marker-end="url(#arrow)"/>
+<text x="340.6" y="311.3" text-anchor="middle" font-size="8" fill="#333">p=0.14 λ=0.48</text>
+<path d="M 244.7,206.7 Q 358.5,165.8 455.3,93.3" fill="none" stroke="#555555" stroke-width="0.76" marker-end="url(#arrow)"/>
+<text x="358.5" y="161.8" text-anchor="middle" font-size="8" fill="#333">p=0.10 λ=0.36</text>
+<path d="M 231.0,194.3 Q 266.5,157.1 269.0,105.7" fill="none" stroke="#555555" stroke-width="1.11" marker-end="url(#arrow)"/>
+<text x="266.5" y="153.1" text-anchor="middle" font-size="8" fill="#333">p=0.25 λ=0.44</text>
+<path d="M 248.0,220.0 Q 380.0,238.0 512.0,220.0" fill="none" stroke="#555555" stroke-width="0.72" marker-end="url(#arrow)"/>
+<text x="380.0" y="234.0" text-anchor="middle" font-size="8" fill="#333">p=0.09 λ=0.47</text>
+<path d="M 270.2,353.8 Q 266.9,293.7 229.8,246.2" fill="none" stroke="#555555" stroke-width="0.83" marker-end="url(#arrow)"/>
+<text x="266.9" y="289.7" text-anchor="middle" font-size="8" fill="#333">p=0.13 λ=0.42</text>
+<path d="M 305.0,367.5 Q 508.0,286.1 695.0,172.5" fill="none" stroke="#2f7d4a" stroke-width="0.63" marker-end="url(#arrow)"/>
+<text x="508.0" y="282.1" text-anchor="middle" font-size="8" fill="#333">p=0.05 λ=0.31</text>
+<path d="M 300.0,362.0 C 335.0,310.0 225.0,310.0 260.0,362.0" fill="none" stroke="#888" stroke-width="0.87" marker-end="url(#arrow)"/>
+<text x="280.0" y="302.0" text-anchor="middle" font-size="9" fill="#444">p=0.11, λ=0.47</text>
+<path d="M 308.0,378.7 Q 500.8,388.0 692.0,361.3" fill="none" stroke="#b33a3a" stroke-width="0.93" marker-end="url(#arrow)"/>
+<text x="500.8" y="384.0" text-anchor="middle" font-size="8" fill="#333">p=0.17 λ=0.13</text>
+<path d="M 308.0,380.0 Q 380.0,398.0 452.0,380.0" fill="none" stroke="#555555" stroke-width="0.82" marker-end="url(#arrow)"/>
+<text x="380.0" y="394.0" text-anchor="middle" font-size="8" fill="#333">p=0.13 λ=0.55</text>
+<path d="M 295.5,356.7 Q 395.0,240.0 464.5,103.3" fill="none" stroke="#555555" stroke-width="0.88" marker-end="url(#arrow)"/>
+<text x="395.0" y="236.0" text-anchor="middle" font-size="8" fill="#333">p=0.15 λ=0.39</text>
+<path d="M 280.0,352.0 Q 298.0,230.0 280.0,108.0" fill="none" stroke="#555555" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="298.0" y="226.0" text-anchor="middle" font-size="8" fill="#333">p=0.17 λ=0.39</text>
+<path d="M 303.8,365.3 Q 419.4,315.3 516.2,234.7" fill="none" stroke="#555555" stroke-width="0.71" marker-end="url(#arrow)"/>
+<text x="419.4" y="311.3" text-anchor="middle" font-size="8" fill="#333">p=0.08 λ=0.39</text>
+<path d="M 456.2,365.3 Q 359.4,284.7 243.8,234.7" fill="none" stroke="#555555" stroke-width="0.98" marker-end="url(#arrow)"/>
+<text x="359.4" y="280.7" text-anchor="middle" font-size="8" fill="#333">p=0.19 λ=0.47</text>
+<path d="M 500.6,361.1 Q 612.2,283.3 699.4,178.9" fill="none" stroke="#2f7d4a" stroke-width="0.61" marker-end="url(#arrow)"/>
+<text x="612.2" y="279.3" text-anchor="middle" font-size="8" fill="#333">p=0.04 λ=0.31</text>
+<path d="M 452.0,380.0 Q 380.0,362.0 308.0,380.0" fill="none" stroke="#555555" stroke-width="0.72" marker-end="url(#arrow)"/>
+<text x="380.0" y="358.0" text-anchor="middle" font-size="8" fill="#333">p=0.09 λ=0.48</text>
+<path d="M 507.9,377.7 Q 601.5,387.9 692.1,362.3" fill="none" stroke="#b33a3a" stroke-width="0.76" marker-end="url(#arrow)"/>
+<text x="601.5" y="383.9" text-anchor="middle" font-size="8" fill="#333">p=0.11 λ=0.15</text>
+<path d="M 500.0,362.0 C 535.0,310.0 425.0,310.0 460.0,362.0" fill="none" stroke="#888" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="480.0" y="302.0" text-anchor="middle" font-size="9" fill="#444">p=0.13, λ=0.44</text>
+<path d="M 480.0,352.0 Q 498.0,230.0 480.0,108.0" fill="none" stroke="#555555" stroke-width="0.77" marker-end="url(#arrow)"/>
+<text x="498.0" y="226.0" text-anchor="middle" font-size="8" fill="#333">p=0.11 λ=0.39</text>
+<path d="M 464.5,356.7 Q 395.0,220.0 295.5,103.3" fill="none" stroke="#555555" stroke-width="1.05" marker-end="url(#arrow)"/>
+<text x="395.0" y="216.0" text-anchor="middle" font-size="8" fill="#333">p=0.22 λ=0.44</text>
+<path d="M 489.8,353.8 Q 526.9,306.3 530.2,246.2" fill="none" stroke="#555555" stroke-width="0.77" marker-end="url(#arrow)"/>
+<text x="526.9" y="302.3" text-anchor="middle" font-size="8" fill="#333">p=0.11 λ=0.60</text>
+<path d="M 455.3,93.3 Q 341.5,134.2 244.7,206.7" fill="none" stroke="#555555" stroke-width="0.77" marker-end="url(#arrow)"/>
+<text x="341.5" y="130.2" text-anchor="middle" font-size="8" fill="#333">p=0.11 λ=0.37</text>
+<path d="M 506.6,88.9 Q 594.3,137.1 693.4,151.1" fill="none" stroke="#2f7d4a" stroke-width="0.77" marker-end="url(#arrow)"/>
+<text x="594.3" y="133.1" text-anchor="middle" font-size="8" fill="#333">p=0.11 λ=0.60</text>
+<path d="M 464.5,103.3 Q 365.0,220.0 295.5,356.7" fill="none" stroke="#555555" stroke-width="0.73" marker-end="url(#arrow)"/>
+<text x="365.0" y="216.0" text-anchor="middle" font-size="8" fill="#333">p=0.09 λ=0.40</text>
+<path d="M 498.2,101.3 Q 586.3,231.7 701.8,338.7" fill="none" stroke="#b33a3a" stroke-width="0.91" marker-end="url(#arrow)"/>
+<text x="586.3" y="227.7" text-anchor="middle" font-size="8" fill="#333">p=0.16 λ=0.11</text>
+<path d="M 480.0,108.0 Q 462.0,230.0 480.0,352.0" fill="none" stroke="#555555" stroke-width="0.66" marker-end="url(#arrow)"/>
+<text x="462.0" y="226.0" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.42</text>
+<path d="M 500.0,62.0 C 535.0,10.0 425.0,10.0 460.0,62.0" fill="none" stroke="#888" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="480.0" y="2.0" text-anchor="middle" font-size="9" fill="#444">p=0.13, λ=0.41</text>
+<path d="M 452.0,80.0 Q 380.0,62.0 308.0,80.0" fill="none" stroke="#555555" stroke-width="1.24" marker-end="url(#arrow)"/>
+<text x="380.0" y="58.0" text-anchor="middle" font-size="8" fill="#333">p=0.29 λ=0.66</text>
+<path d="M 491.0,105.7 Q 493.5,157.1 529.0,194.3" fill="none" stroke="#555555" stroke-width="0.59" marker-end="url(#arrow)"/>
+<text x="493.5" y="153.1" text-anchor="middle" font-size="8" fill="#333">p=0.04 λ=0.37</text>
+<path d="M 106.9,252.3 Q 154.9,257.3 193.1,227.7" fill="none" stroke="#555555" stroke-width="1.06" marker-end="url(#arrow)"/>
+<text x="154.9" y="253.3" text-anchor="middle" font-size="8" fill="#333">p=0.22 λ=0.54</text>
+<path d="M 104.0,274.4 Q 170.7,335.4 256.0,365.6" fill="none" stroke="#555555" stroke-width="0.68" marker-end="url(#arrow)"/>
+<text x="170.7" y="331.4" text-anchor="middle" font-size="8" fill="#333">p=0.07 λ=0.51</text>
+<path d="M 106.8,268.0 Q 274.8,337.2 453.2,372.0" fill="none" stroke="#555555" stroke-width="0.85" marker-end="url(#arrow)"/>
+<text x="274.8" y="333.2" text-anchor="middle" font-size="8" fill="#333">p=0.14 λ=0.47</text>
+<path d="M 105.5,248.5 Q 287.4,186.4 454.5,91.5" fill="none" stroke="#555555" stroke-width="0.82" marker-end="url(#arrow)"/>
+<text x="287.4" y="182.4" text-anchor="middle" font-size="8" fill="#333">p=0.13 λ=0.50</text>
+<path d="M 100.8,241.3 Q 192.0,183.4 259.2,98.7" fill="none" stroke="#555555" stroke-width="1.43" marker-end="url(#arrow)"/>
+<text x="192.0" y="179.4" text-anchor="middle" font-size="8" fill="#333">p=0.37 λ=0.47</text>
+<path d="M 107.9,257.6 Q 311.6,257.9 512.1,222.4" fill="none" stroke="#555555" stroke-width="0.66" marker-end="url(#arrow)"/>
+<text x="311.6" y="253.9" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.50</text>
+<path d="M 269.0,105.7 Q 233.5,142.9 231.0,194.3" fill="none" stroke="#555555" stroke-width="0.90" marker-end="url(#arrow)"/>
+<text x="233.5" y="138.9" text-anchor="middle" font-size="8" fill="#333">p=0.16 λ=0.44</text>
+<path d="M 307.5,85.0 Q 496.8,137.7 692.5,155.0" fill="none" stroke="#2f7d4a" stroke-width="0.66" marker-end="url(#arrow)"/>
+<text x="496.8" y="133.7" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.39</text>
+<path d="M 280.0,108.0 Q 262.0,230.0 280.0,352.0" fill="none" stroke="#555555" stroke-width="0.65" marker-end="url(#arrow)"/>
+<text x="262.0" y="226.0" text-anchor="middle" font-size="8" fill="#333">p=0.06 λ=0.45</text>
+<path d="M 303.6,95.0 Q 490.3,235.2 696.4,345.0" fill="none" stroke="#b33a3a" stroke-width="0.79" marker-end="url(#arrow)"/>
+<text x="490.3" y="231.2" text-anchor="middle" font-size="8" fill="#333">p=0.12 λ=0.19</text>
+<path d="M 295.5,103.3 Q 365.0,240.0 464.5,356.7" fill="none" stroke="#555555" stroke-width="0.74" marker-end="url(#arrow)"/>
+<text x="365.0" y="236.0" text-anchor="middle" font-size="8" fill="#333">p=0.10 λ=0.44</text>
+<path d="M 308.0,80.0 Q 380.0,98.0 452.0,80.0" fill="none" stroke="#555555" stroke-width="1.00" marker-end="url(#arrow)"/>
+<text x="380.0" y="94.0" text-anchor="middle" font-size="8" fill="#333">p=0.20 λ=0.79</text>
+<path d="M 300.0,62.0 C 335.0,10.0 225.0,10.0 260.0,62.0" fill="none" stroke="#888" stroke-width="1.23" marker-end="url(#arrow)"/>
+<text x="280.0" y="2.0" text-anchor="middle" font-size="9" fill="#444">p=0.26, λ=0.46</text>
+<path d="M 304.7,93.3 Q 401.5,165.8 515.3,206.7" fill="none" stroke="#555555" stroke-width="0.60" marker-end="url(#arrow)"/>
+<text x="401.5" y="161.8" text-anchor="middle" font-size="8" fill="#333">p=0.04 λ=0.46</text>
+<path d="M 512.0,220.0 Q 380.0,202.0 248.0,220.0" fill="none" stroke="#555555" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="380.0" y="198.0" text-anchor="middle" font-size="8" fill="#333">p=0.17 λ=0.47</text>
+<path d="M 566.6,211.1 Q 635.7,207.1 693.4,168.9" fill="none" stroke="#2f7d4a" stroke-width="0.62" marker-end="url(#arrow)"/>
+<text x="635.7" y="203.1" text-anchor="middle" font-size="8" fill="#333">p=0.05 λ=0.25</text>
+<path d="M 516.2,234.7 Q 400.6,284.7 303.8,365.3" fill="none" stroke="#555555" stroke-width="0.79" marker-end="url(#arrow)"/>
+<text x="400.6" y="280.7" text-anchor="middle" font-size="8" fill="#333">p=0.12 λ=0.44</text>
+<path d="M 562.1,237.2 Q 618.9,304.2 697.9,342.8" fill="none" stroke="#b33a3a" stroke-width="0.76" marker-end="url(#arrow)"/>
+<text x="618.9" y="300.2" text-anchor="middle" font-size="8" fill="#333">p=0.10 λ=0.16</text>
+<path d="M 530.2,246.2 Q 493.1,293.7 489.8,353.8" fill="none" stroke="#555555" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="493.1" y="289.7" text-anchor="middle" font-size="8" fill="#333">p=0.17 λ=0.51</text>
+<path d="M 529.0,194.3 Q 526.5,142.9 491.0,105.7" fill="none" stroke="#555555" stroke-width="0.72" marker-end="url(#arrow)"/>
+<text x="526.5" y="138.9" text-anchor="middle" font-size="8" fill="#333">p=0.09 λ=0.33</text>
+<path d="M 515.3,206.7 Q 418.5,134.2 304.7,93.3" fill="none" stroke="#555555" stroke-width="0.93" marker-end="url(#arrow)"/>
+<text x="418.5" y="130.2" text-anchor="middle" font-size="8" fill="#333">p=0.17 λ=0.43</text>
+<path d="M 560.0,202.0 C 595.0,150.0 485.0,150.0 520.0,202.0" fill="none" stroke="#888" stroke-width="0.92" marker-end="url(#arrow)"/>
+<text x="540.0" y="142.0" text-anchor="middle" font-size="9" fill="#444">p=0.13, λ=0.45</text>
+<circle cx="80" cy="260" r="28" fill="#e8f1ff" stroke="#1f4e79" stroke-width="2"/>
+<text x="80" y="264" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">start</text>
+<circle cx="280" cy="80" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="280" y="84" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">video</text>
+<circle cx="480" cy="80" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="480" y="84" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">problem</text>
+<circle cx="220" cy="220" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="220" y="224" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">access</text>
+<circle cx="540" cy="220" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="540" y="224" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">wiki</text>
+<circle cx="280" cy="380" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="280" y="384" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">discussion</text>
+<circle cx="480" cy="380" r="28" fill="#f7f7f7" stroke="#444444" stroke-width="2"/>
+<text x="480" y="384" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">navigate</text>
+<circle cx="720" cy="160" r="28" fill="#eaf7ee" stroke="#2f7d4a" stroke-width="2"/>
+<text x="720" y="164" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">active</text>
+<circle cx="720" cy="360" r="28" fill="#fdeeee" stroke="#b33a3a" stroke-width="2"/>
+<text x="720" y="364" text-anchor="middle" font-size="11" font-family="Arial" fill="#222">dropout</text>
+<text x="20" y="505" font-size="11" fill="#666">Edge thickness ~ probability. Labels: p = transition probability, λ = exponential rate.</text>
+</svg>
