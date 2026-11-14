@@ -1,6 +1,0 @@
-model,fitness,precision,log_moves,matched_moves,model_edges,used_model_edges,unused_edge,note
-browser,1.000000,0.981481,2690915,2690915,54,53,start->problem,Same edge structure as other nets; metrics ignore transition weights
-explorer,1.000000,0.981481,2690915,2690915,54,53,start->problem,Same edge structure as other nets; metrics ignore transition weights
-abandoner,1.000000,0.981481,2690915,2690915,54,53,start->problem,Same edge structure as other nets; metrics ignore transition weights
-converter,1.000000,0.981481,2690915,2690915,54,53,start->problem,Same edge structure as other nets; metrics ignore transition weights
-mixed_discovered,1.000000,0.981481,2690915,2690915,54,53,start->problem,Same edge structure as other nets; metrics ignore transition weights
