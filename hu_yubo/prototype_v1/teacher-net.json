@@ -1,0 +1,174 @@
+{
+  "name": "teacher_probability_sweep_v1",
+  "places": [
+    "after_A_B",
+    "after_A_P",
+    "after_B",
+    "after_C1",
+    "after_P",
+    "after_S",
+    "choice",
+    "failed",
+    "start",
+    "succeeded"
+  ],
+  "initial": {
+    "start": 1
+  },
+  "transitions": [
+    {
+      "name": "A_B",
+      "label": "A",
+      "interval_ms": [
+        1000,
+        1000
+      ],
+      "pre": {
+        "after_B": 1
+      },
+      "post": {
+        "after_A_B": 1
+      }
+    },
+    {
+      "name": "A_P",
+      "label": "A",
+      "interval_ms": [
+        1000,
+        1000
+      ],
+      "pre": {
+        "after_P": 1
+      },
+      "post": {
+        "after_A_P": 1
+      }
+    },
+    {
+      "name": "B",
+      "label": "B",
+      "interval_ms": [
+        300,
+        300
+      ],
+      "pre": {
+        "choice": 1
+      },
+      "post": {
+        "after_B": 1
+      }
+    },
+    {
+      "name": "C1",
+      "label": "C1",
+      "interval_ms": [
+        400,
+        400
+      ],
+      "pre": {
+        "after_S": 1
+      },
+      "post": {
+        "after_C1": 1
+      }
+    },
+    {
+      "name": "C2",
+      "label": "C2",
+      "interval_ms": [
+        300,
+        300
+      ],
+      "pre": {
+        "after_C1": 1
+      },
+      "post": {
+        "choice": 1
+      }
+    },
+    {
+      "name": "F_P",
+      "label": "F",
+      "interval_ms": [
+        1000,
+        1000
+      ],
+      "pre": {
+        "after_A_P": 1
+      },
+      "post": {
+        "failed": 1
+      }
+    },
+    {
+      "name": "OK_B",
+      "label": "OK",
+      "interval_ms": [
+        1000,
+        1000
+      ],
+      "pre": {
+        "after_A_B": 1
+      },
+      "post": {
+        "succeeded": 1
+      }
+    },
+    {
+      "name": "OK_P",
+      "label": "OK",
+      "interval_ms": [
+        1000,
+        1000
+      ],
+      "pre": {
+        "after_A_P": 1
+      },
+      "post": {
+        "succeeded": 1
+      }
+    },
+    {
+      "name": "P",
+      "label": "P",
+      "interval_ms": [
+        300,
+        300
+      ],
+      "pre": {
+        "choice": 1
+      },
+      "post": {
+        "after_P": 1
+      }
+    },
+    {
+      "name": "S",
+      "label": "S",
+      "interval_ms": [
+        0,
+        0
+      ],
+      "pre": {
+        "start": 1
+      },
+      "post": {
+        "after_S": 1
+      }
+    }
+  ],
+  "policy": {
+    "branch_counts": "exactly N/2 P and N/2 B, shuffled",
+    "P_outcome": "F iff U < p; otherwise OK",
+    "B_outcome": "always OK",
+    "timing_ms": [
+      0,
+      400,
+      700,
+      1000,
+      2000,
+      3000
+    ],
+    "noise": 0
+  }
+}

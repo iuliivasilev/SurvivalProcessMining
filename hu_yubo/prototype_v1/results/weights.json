@@ -1,0 +1,7 @@
+{
+  "model": "precursor-shared-score-v1",
+  "weights": {
+    "baseline": 1.0944330712205768,
+    "contrast": 0.284083141020132
+  }
+}
