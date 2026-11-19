@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .features import read_log
+from .generation import TruthGenerator
 from .log import read_csv
 
 AD_START = "A"
@@ -32,46 +33,6 @@ AD_TRANSITIONS = [
 LOSS_MEAN_DAYS = 60
 
 
-def sample_time(dist, rng):
-    kind, par = dist
-    if kind == "exponential":
-        return rng.exponential(par["mean"])
-    if kind == "lognormal":
-        return rng.lognormal(np.log(par["median"]), par["sigma"])
-    if kind == "gamma":
-        return rng.gamma(par["shape"], par["scale"])
-    if kind == "weibull":
-        return par["scale"] * rng.weibull(par["shape"])
-    if kind == "uniform":
-        return rng.uniform(par["low"], par["high"])
-    raise ValueError(kind)
-
-
-def simulate_case(rng, horizon=np.inf, transitions=AD_TRANSITIONS, start=AD_START, terminal=AD_TERMINAL,
-                  loss_mean_days=LOSS_MEAN_DAYS, max_steps=10_000):
-    """``(events, duration, outcome)``: ``events = [(состояние, время от старта), ...]``,
-    ``outcome`` — ``"event"``, ``"lost"`` или ``"study_end"``.
-
-    Выход выбирается по ``p``; потеря наблюдения (экспонента со средним ``loss_mean_days``,
-    ``None`` — потерь нет) соревнуется по времени с выбранным переходом."""
-    state, now, events = start, 0., [(start, 0.)]
-    for _ in range(max_steps):
-        if state == terminal:
-            return events, now, "event"
-        candidates = [t for t in transitions if t["src"] == state]
-        transition = candidates[rng.choice(len(candidates), p=[t["p"] for t in candidates])]
-        dt = sample_time(transition["dist"], rng)
-        loss = rng.exponential(loss_mean_days) if loss_mean_days else np.inf
-        if min(dt, loss) > horizon - now:
-            return events, horizon, "study_end"
-        if loss < dt:
-            return events, now + loss, "lost"
-        now += dt
-        state = transition["dst"]
-        events.append((state, now))
-    raise RuntimeError("превышено max_steps")
-
-
 def generate_ad(n_cases, seed, transitions=AD_TRANSITIONS, start=AD_START, terminal=AD_TERMINAL,
                 loss_mean_days=LOSS_MEAN_DAYS, study_start=pd.Timestamp("2025-01-01", tz="UTC"),
                 enroll_days=60, study_days=90):
@@ -82,20 +43,48 @@ def generate_ad(n_cases, seed, transitions=AD_TRANSITIONS, start=AD_START, termi
 
         raw, censoring = generate_ad(1000, seed=2026)
         log, cases = survpm.prepare(raw, "A", "D", censoring["end"], censoring["reason"])
+
+    Генератор — :class:`survpm.TruthGenerator`; :func:`generate_ad_log` даёт тот же журнал как ``EventLog``.
     """
-    rng = np.random.default_rng(seed)
+    generator = ad_generator(seed, transitions, start, terminal, loss_mean_days, study_start, enroll_days)
     rows, censoring = [], {}
-    for i in range(n_cases):
-        case_id = f"case_{i + 1:04d}"
-        entry = rng.uniform(0, enroll_days)
-        events, duration, outcome = simulate_case(rng, study_days - entry, transitions, start, terminal, loss_mean_days)
+    for path in generator._paths(n_cases):
+        case_id = path.case.case_id
+        entry = generator.entries[case_id]
+        path.case.horizon = None
         rows.extend(dict(case_id=case_id, activity=state,
                          timestamp=study_start + pd.to_timedelta(entry + t, unit="D").round("s"))
-                    for state, t in events)
-        if outcome != "event":
-            censoring[case_id] = dict(end=study_start + pd.to_timedelta(entry + duration, unit="D").round("s"),
-                                      reason=outcome)
+                    for state, t in zip(path.states, path.times))
+        if not path.event:
+            censoring[case_id] = dict(end=study_start + pd.to_timedelta(entry + path.end, unit="D").round("s"),
+                                      reason="study_end" if path.reason == "horizon" else path.reason)
     return pd.DataFrame(rows), pd.DataFrame.from_dict(censoring, orient="index", columns=["end", "reason"])
+
+
+class _StudyGenerator(TruthGenerator):
+    """Синтетика A–D: конец наблюдения — общий конец исследования (``study_days`` от старта)."""
+    def __init__(self, *args, study_days=90, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.study_days = study_days
+
+    def start_cases(self, n, rng):
+        for case in super().start_cases(n, rng):
+            case.horizon = self.study_days - self.entries[case.case_id]
+            yield case
+
+
+def ad_generator(seed, transitions=AD_TRANSITIONS, start=AD_START, terminal=AD_TERMINAL,
+                 loss_mean_days=LOSS_MEAN_DAYS, study_start=pd.Timestamp("2025-01-01", tz="UTC"),
+                 enroll_days=60, study_days=90):
+    """:class:`survpm.TruthGenerator` синтетики A–D (общий поток случайных чисел, как прежде)."""
+    return _StudyGenerator(transitions, start, terminal, seed=seed, rng="shared", max_steps=10_000,
+                           loss_mean_days=loss_mean_days, origin=study_start, enroll_days=enroll_days,
+                           study_days=study_days)
+
+
+def generate_ad_log(n_cases, seed, **options):
+    """Синтетика A–D сразу как :class:`survpm.EventLog` (с ``observation``: ``end``, ``event``, ``reason``)."""
+    return ad_generator(seed, **options).generate(n_cases)
 
 
 SEPSIS_START, SEPSIS_TERMINAL = "Registration", "Discharge"

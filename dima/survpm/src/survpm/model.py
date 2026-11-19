@@ -8,7 +8,7 @@ from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, 
 from .estimation import estimate_network, source_nll
 from .eventlog import EventLog
 from .log import censoring_summary, intervals as make_intervals, prepare
-from .simulation import completion_times, simulate
+from .generation import Case, TruthGenerator
 from .network import Network
 from .models.transitions import ExponentialTransitionModel
 from .process import ProcessModel
@@ -226,34 +226,17 @@ class CensoredStateNet:
         return pd.DataFrame(rows)
 
     def simulate(self, n, seed=None, censoring=False, horizon=None):
-        """Трассы ``[(states, times), ...]``; ``censoring=True`` — обрыв с наблюдаемой вероятностью ``q``."""
+        """Трассы ``[(states, times), ...]``; ``censoring=True`` — обрыв с наблюдаемой вероятностью ``q``.
+
+        ``horizon`` — момент цензуры каждой трассы (массив длины ``n``). Генератор —
+        :class:`survpm.TruthGenerator` с общим потоком случайных чисел."""
         self._require_profile()
-        if self.transition_mode == 'min_time' and hasattr(self, 'transitions_'):
-            rng = np.random.default_rng(seed)
-            traces = []
-            for i in range(n):
-                state, now, states, times = self.start, 0., [self.start], [0.]
-                for _ in range(1000):
-                    rates = self.transitions_.transition_parameters(state)
-                    if state == self.terminal or not any(rates.values()):
-                        break
-                    if censoring and rng.random() < self.stop_.get(state, 0.):
-                        break
-                    dst, dt = self.process_model_.next_transition(state, {}, [], rng)
-                    now += dt
-                    if horizon is not None and now > horizon[i]:
-                        break
-                    state = dst
-                    states.append(state)
-                    times.append(now)
-                traces.append((states, times))
-            return traces
-        return simulate(self.edges_, self.start, self.terminal, n, seed,
-                        stop=self.stop_ if censoring else None, horizon=horizon)
+        return _NetGenerator(self, n, seed, censoring, horizon).traces(n)
 
     def completion_times(self, n=10_000, seed=0):
         """Время от ``start`` до ``terminal`` по симуляции без цензуры; ``inf`` — не дошла."""
-        return completion_times(self.simulate(n, seed), self.terminal)
+        return np.array([times[-1] if states[-1] == self.terminal else np.inf
+                         for states, times in self.simulate(n, seed)])
 
     def survival(self, t, n=10_000, seed=0, method="sim", step=None):
         """``S(t) = P(T > t)`` для времени до ``terminal``.
@@ -376,3 +359,35 @@ class CensoredStateNet:
         """Автомат для Ebi; ``censoring=True`` — остановка в состоянии с вероятностью ``q``."""
         self._require_profile()
         return adapters.to_sdfa(self.edges_, self.start, self.stop_ if censoring else None, digits)
+
+
+class _NetGenerator(TruthGenerator):
+    """Генератор :class:`CensoredStateNet`: рёбра ``edges_`` (время — ``scipy.stats``) или, в режиме
+    min_time, конкурирующие экспоненты модели; объекты стартуют в ``start`` в момент 0."""
+    def __init__(self, net, n, seed, censoring, horizon):
+        super().__init__(net.edges_, net.start, net.terminal, seed=seed, rng='shared',
+                         stop=net.stop_ if censoring else None)
+        self.net, self.case_horizon = net, horizon
+        self.min_time = net.transition_mode == 'min_time' and hasattr(net, 'transitions_')
+        if not self.min_time:
+            self._frozen = {}
+            for edge in net.edges_:
+                rv, args, kwargs = scipy_args(edge['dist'])
+                self._frozen[(edge['src'], edge['dst'])] = rv(*args, **kwargs)
+
+    def start_cases(self, n, rng):
+        for i in range(n):
+            h = None if self.case_horizon is None else float(self.case_horizon[i])
+            yield Case(i, self.start, self.origin, horizon=None if h is None or np.isinf(h) else h)
+
+    def has_exit(self, state):
+        if self.min_time:
+            return any(self.net.transitions_.transition_parameters(state).values())
+        return super().has_exit(state)
+
+    def transition(self, state, rng):
+        if self.min_time:
+            return self.net.process_model_.next_transition(state, {}, [], rng)
+        destinations, p, _ = self._outgoing[state]
+        j = rng.choice(len(p), p=p)
+        return destinations[j], float(self._frozen[(state, destinations[j])].rvs(random_state=rng))

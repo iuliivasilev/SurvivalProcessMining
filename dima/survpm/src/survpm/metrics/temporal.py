@@ -15,6 +15,7 @@ log-distance-measures формально требует Python < 3.13:
 import datetime
 
 import numpy as np
+import pandas as pd
 import pm4py
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
@@ -24,7 +25,6 @@ from sksurv.util import Surv
 
 from ..adapters import to_pm4py_log
 from ..distributions import scipy_args
-from ..simulation import completion_times, traces_to_log
 from .fold import per_model
 
 try:
@@ -50,6 +50,19 @@ def _test_cases(fold):
     """Тестовые трассы в порядке журнала (так парная симуляция совпадает с тестом по входу и цензуре)."""
     return fold.cached("level3_test_cases", lambda: fold.test_cases.set_index("case_id")
                        .loc[fold.test_log["case_id"].unique()].reset_index())
+
+
+def completion_times(traces, terminal):
+    """Время до ``terminal`` по трассам ``[(states, times), ...]``; ``inf`` — не дошла."""
+    return np.array([times[-1] if states[-1] == terminal else np.inf for states, times in traces])
+
+
+def traces_to_log(traces, entries, prefix="sim"):
+    """Трассы → журнал ``case_id, activity, timestamp``; ``entries`` — моменты входа."""
+    rows = [dict(case_id=f"{prefix}_{i}", activity=state, timestamp=entry + pd.to_timedelta(t, unit="D"))
+            for i, ((states, times), entry) in enumerate(zip(traces, entries))
+            for state, t in zip(states, times)]
+    return pd.DataFrame(rows, columns=["case_id", "activity", "timestamp"])
 
 
 def _free(model, fold):

@@ -116,6 +116,57 @@ f.terminal_probs(...), f.hazard(...), f.expected_time(test, as_of, horizon=30, c
 Прогноз видит только историю до `as_of`. `updater(X, state, t, rng)` в `ObjectStream`
 меняет X при входе в состояние; `future_features` в `Router`/`Forecaster` — сценарий будущих X.
 
+### Свой прогноз: `Forecaster`
+
+`survpm.Forecaster` — базовый класс с одним обязательным методом `cumulative_incidence(case, times)`:
+F_k(t) = P(T ≤ t, исход = k | история до as_of), таблица `horizon, outcome, cdf`. База обрезает
+историю на `as_of`, строит `Case` (`context`), проверяет ответ (0 ≤ F_k ≤ 1, не убывает, Σ_k F_k ≤ 1)
+и выводит остальное по определению: `survival` (S = 1 − Σ F_k), `terminal_probs`, `hazard`
+((F_k(b) − F_k(a)) / S(a) / (b − a)), `expected_time` (∫₀ʰ S dt). `case_id` может быть списком.
+
+```python
+class AlwaysExp(survpm.Forecaster):
+    def cumulative_incidence(self, case, times):
+        return pd.DataFrame(dict(horizon=times, outcome="D", cdf=1 - np.exp(-.5 * np.asarray(times))))
+
+AlwaysExp(terminals=["D"]).survival(test, as_of, [1, 7, 30], case_id=case)
+```
+
+| Реализация | Метод | Точность |
+|---|---|---|
+| `MarkovForecaster(model)` | F_k(t) = [exp(Q t)]_{s,k}, экспоненциальные времена, X фиксированы на as_of | точно |
+| `SimulationForecaster(model, n_paths, seed, future_features)` | Монте-Карло по `LogGenerator` (метод `generator`) | колонка `se` = √(F(1−F)/n) |
+
+`survpm.Forecaster(model, n_paths=..., seed=...)` создаёт `SimulationForecaster` (как раньше, те же
+числа), `method="markov"` — `MarkovForecaster`.
+
+### Свой генератор: `LogGenerator`
+
+Все генераторы — подклассы `survpm.LogGenerator`. Подклассу нужны два метода, остальное
+(цикл по шагам, `horizon`, `max_steps`, случайность, сборка `EventLog` с `observation`) — в базе:
+
+```python
+class Coin(survpm.LogGenerator):
+    terminals = {"Done"}
+
+    def start_cases(self, n, rng):                 # начальные объекты (список или yield)
+        return [survpm.Case(f"c{i}", "Start", "2025-01-01") for i in range(n)]
+
+    def next_step(self, case, rng):                # Step(dst, dt в днях) или None — выхода нет
+        return survpm.Step("Done" if rng.random() < .5 else "Start", rng.exponential(1.))
+
+log = Coin(seed=1, horizon=30).generate(200)       # EventLog
+traces = Coin(seed=1).traces(200)                  # быстро: [(состояния, дни от старта), ...]
+```
+
+* `Step(None, dt, "lost")` — наблюдение обрывается через `dt` дней без события (потеря).
+* `on_enter(case, rng)` — необязательный хук: признаки `X` на входе в состояние (пишутся в `measurements`).
+* `Case(..., horizon=...)` — свой горизонт объекта; `rng="per_case"` (по умолчанию) — поток
+  случайных чисел по `case_id`, `rng="shared"` — один поток на журнал.
+* Готовые: `ModelGenerator(model, stream)` — по `ProcessModel` (на нём `Simulator`);
+  `TruthGenerator(edges, start, terminals, loss_mean_days=..., stop=...)` — по рёбрам `src, dst, p, dist`
+  (на нём `datasets.generate_ad`, `datasets.generate_ad_log` и `CensoredStateNet.simulate`).
+
 ## Метрики
 
 Одна точка входа и один формат — таблица `level, model, metric, value`:
@@ -170,6 +221,8 @@ survpm.MatplotlibVisualizer().plot_edge_curves(model, ("A", "B"))   # P(выхо
 | Время и направление переходов | `TransitionModel` (`fit`, `transition_parameters`, `next_transition`, `log_likelihood`) | `ExponentialTransitionModel`; `register_transition_model(name, factory)` |
 | Признаки из истории | `HistoryFeatures` (`fit`, `transform`, `at_entry`) | `DefaultHistoryFeatures` |
 | Изменение X при входе | `FeatureUpdater(X, state, t, rng)` | функция |
+| Генерация журнала | подкласс `LogGenerator` (`start_cases`, `next_step`) | `ModelGenerator`, `TruthGenerator` |
+| Прогноз | подкласс `Forecaster` (`cumulative_incidence`) | `SimulationForecaster`, `MarkovForecaster` |
 | Метрика | `(model, log) → число или таблица metric/value` | `register_metric` |
 | Рисунок | `Visualizer` | `GraphvizVisualizer`, `MatplotlibVisualizer` |
 
@@ -184,7 +237,9 @@ survpm.MatplotlibVisualizer().plot_edge_curves(model, ("A", "B"))   # P(выхо
 | `models` | `TransitionModel`, `ExponentialTransitionModel`, `HistoryFeatures`, `FeatureUpdater` |
 | `encoding` | `FeatureEncoder` |
 | `process` | `ProcessModel` |
-| `engine` | `ObjectStream`, `Simulator`, `Router`, `Forecaster`, `Evaluator` |
+| `generation` | `LogGenerator`, `Case`, `Step`, `ModelGenerator`, `TruthGenerator` |
+| `forecasting` | `Forecaster`, `SimulationForecaster`, `MarkovForecaster` |
+| `engine` | `ObjectStream`, `Simulator`, `Router`, `Evaluator` |
 | `metrics` | `evaluate`, `compare`, уровни 1–4, `crossval` |
 | `viz` | `GraphvizVisualizer`, `MatplotlibVisualizer`, `state_graph` |
 | `adapters` | PM4Py (сеть Петри, DFG), Ebi (SDFA) — по требованию |

@@ -10,6 +10,7 @@
     train, test = log.split(seed=1)
     model = survpm.ProcessModel().fit(train)              # сеть — DFG по train
     synthetic = survpm.Simulator(model, seed=1).run(survpm.ObjectStream.from_log(train), horizon=60)
+    # свой генератор — подкласс survpm.LogGenerator (start_cases + next_step)
     survpm.evaluate(model, test, "all")                   # все метрики, одна таблица
     model.plot("petri")                                   # сеть Петри с местом CENS
 
@@ -19,7 +20,7 @@
 __version__ = "0.2.0"
 
 # --- v2: данные, структура, модель, движки, метрики, рисунки ---------------------------------
-from . import datasets, features
+from . import datasets, features, generation, forecasting
 from .eventlog import EventLog, process_bounds
 from .features import read_log
 from .network import Network
@@ -30,7 +31,9 @@ from .models import (TransitionModel, TransitionPicker, MinTimePicker, Exponenti
                      DefaultHistoryFeatures, FeatureUpdater, LatentModel)
 from .encoding import FeatureEncoder
 from .process import ProcessModel
-from .engine import ObjectStream, Simulator, Router, Forecaster, Evaluator
+from .generation import LogGenerator, Case, Step, ModelGenerator, TruthGenerator
+from .forecasting import Forecaster, SimulationForecaster, MarkovForecaster
+from .engine import ObjectStream, Simulator, Router, Evaluator
 from .engine import HistoryFeatures  # прежнее имя DefaultHistoryFeatures; протокол — survpm.models.HistoryFeatures
 from .metrics import (Metric, register_metric, evaluate, compare, compare_networks, available_metrics,
                       long_format)
@@ -42,7 +45,6 @@ from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, 
 from .estimation import estimate_network, source_nll
 from .log import censoring_summary, intervals, prepare, read_csv
 from .model import CensoredStateNet
-from .simulation import completion_times, simulate, traces_to_log
 
 __all__ = [
     # v2
@@ -51,12 +53,13 @@ __all__ = [
     "TransitionModel", "TransitionPicker", "MinTimePicker", "ExponentialTransitionModel",
     "register_transition_model", "create_transition_model",
     "HistoryFeatures", "DefaultHistoryFeatures", "FeatureUpdater", "LatentModel", "FeatureEncoder",
-    "ProcessModel", "ObjectStream", "Simulator", "Router", "Forecaster", "Evaluator",
+    "generation", "forecasting", "LogGenerator", "Case", "Step", "ModelGenerator", "TruthGenerator",
+    "ProcessModel", "ObjectStream", "Simulator", "Router", "Forecaster", "SimulationForecaster", "MarkovForecaster", "Evaluator",
     "Metric", "register_metric", "evaluate", "compare", "compare_networks", "available_metrics", "long_format",
     "Visualizer", "MatplotlibVisualizer", "GraphvizVisualizer",
     # прежний API
     "CensoredStateNet", "prepare", "intervals", "read_csv", "censoring_summary",
-    "simulate", "completion_times", "traces_to_log", "completion_cdf", "curves_table", "residual_cdf",
+    "completion_cdf", "curves_table", "residual_cdf",
     "CANDIDATE_FAMILIES", "dist_str", "mean_time", "scipy_args", "select_families",
     "estimate_network", "source_nll",
 ]
