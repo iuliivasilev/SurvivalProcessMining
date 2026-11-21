@@ -1,0 +1,16 @@
+metric_group,metric,value
+structural,n_true_edges,54
+structural,n_discovered_edges,54
+structural,edge_precision,1.0
+structural,edge_recall,1.0
+structural,fitness_replay,1.0
+probability,n_edges_used,54
+probability,mae,0.006188992877672861
+probability,mape,0.07207497794780597
+probability,wape,0.027292203206782575
+probability,max_abs,0.031297709923664124
+rate_lambda,n_edges_used,54
+rate_lambda,mae,0.029136716807939236
+rate_lambda,mape,0.08018509825123828
+rate_lambda,wape,0.03311126665016546
+rate_lambda,max_abs,0.10920295359735577

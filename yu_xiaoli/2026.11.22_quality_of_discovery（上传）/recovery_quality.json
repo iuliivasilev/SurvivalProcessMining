@@ -1,0 +1,35 @@
+{
+  "design": "A: one ground-truth Petri net -> generate log -> discover -> compare",
+  "only_one_petri_net": "converter",
+  "n_objects": 2000,
+  "n_events": 13824,
+  "seed": 1,
+  "structural_recovery": {
+    "n_true_edges": 54,
+    "n_discovered_edges": 54,
+    "edge_precision": 1.0,
+    "edge_recall": 1.0,
+    "fitness_replay": 1.0
+  },
+  "parameter_recovery": {
+    "probability": {
+      "n_edges_used": 54,
+      "mae": 0.006188992877672861,
+      "mape": 0.07207497794780597,
+      "wape": 0.027292203206782575,
+      "max_abs": 0.031297709923664124
+    },
+    "rate_lambda": {
+      "n_edges_used": 54,
+      "mae": 0.029136716807939236,
+      "mape": 0.08018509825123828,
+      "wape": 0.03311126665016546,
+      "max_abs": 0.10920295359735577
+    }
+  },
+  "interpretation": {
+    "edge_precision_recall": "Do we recover the same transition set?",
+    "fitness_replay": "Can the discovered net replay the generated log moves?",
+    "MAE_MAPE_WAPE": "How close are recovered probabilities and lambda rates to ground truth?"
+  }
+}
