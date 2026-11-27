@@ -9,15 +9,17 @@
     log = survpm.datasets.load_sepsis_log(path).prepare({"starts": ["Registration"], "terminals": ["Discharge"]})
     train, test = log.split(seed=1)
     model = survpm.ProcessModel().fit(train)              # сеть — DFG по train
-    synthetic = survpm.Simulator(model, seed=1).run(survpm.ObjectStream.from_log(train), horizon=60)
-    # свой генератор — подкласс survpm.LogGenerator (start_cases + next_step)
+    model.predict(survpm.DefaultStreamData().at(test))    # закон шага для каждого объекта
+    synthetic = survpm.ModelGenerator(model, seed=1).generate(survpm.EventLog.start(1000, "Registration"),
+                                                               horizon=60).censor(survpm.StudyEnd(days=90))
+    survpm.MarkovForecaster(model).survival(test.cut(t), [1, 7, 30])   # прогноз от «сейчас» = t
     survpm.evaluate(model, test, "all")                   # все метрики, одна таблица
     model.plot("petri")                                   # сеть Петри с местом CENS
 
 Прежний API (``CensoredStateNet``, семейства распределений по AIC, функции подготовки
 журнала) по-прежнему импортируется отсюда и собран в :mod:`survpm.legacy`.
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # --- v2: данные, структура, модель, движки, метрики, рисунки ---------------------------------
 from . import datasets, features, generation, forecasting
@@ -28,12 +30,17 @@ from .discovery import PetriBackend, DirectlyFollowsBackend, discover
 from .adapters import Pm4pyBackend
 from .models import (TransitionModel, TransitionPicker, MinTimePicker, ExponentialTransitionModel,
                      register_transition_model, create_transition_model,
-                     DefaultHistoryFeatures, FeatureUpdater, LatentModel)
+                     DefaultHistoryFeatures, LatentModel)
 from .encoding import FeatureEncoder
 from .process import ProcessModel
-from .generation import LogGenerator, Case, Step, ModelGenerator, TruthGenerator
-from .forecasting import Forecaster, SimulationForecaster, MarkovForecaster
-from .engine import ObjectStream, Simulator, Router, Evaluator
+from .streamdata import StreamData, DefaultStreamData
+from .steps import (StepDistribution, ExponentialStep, ChoiceThenTimeStep, SampledStep,
+                    ChoiceThenTimeModel)
+from .selection import Selector, SampleSelector, MostLikelySelector, BestSelector, WorstSelector
+from .censoring import Censoring, StudyEnd, RandomLoss
+from .generation import LogGenerator, ModelGenerator
+from .forecasting import Forecaster, SimulationForecaster, MarkovForecaster, GridForecaster
+from .engine import Evaluator
 from .engine import HistoryFeatures  # прежнее имя DefaultHistoryFeatures; протокол — survpm.models.HistoryFeatures
 from .metrics import (Metric, register_metric, evaluate, compare, compare_networks, available_metrics,
                       long_format)
@@ -52,9 +59,13 @@ __all__ = [
     "Network", "PetriBackend", "DirectlyFollowsBackend", "Pm4pyBackend", "discover",
     "TransitionModel", "TransitionPicker", "MinTimePicker", "ExponentialTransitionModel",
     "register_transition_model", "create_transition_model",
-    "HistoryFeatures", "DefaultHistoryFeatures", "FeatureUpdater", "LatentModel", "FeatureEncoder",
-    "generation", "forecasting", "LogGenerator", "Case", "Step", "ModelGenerator", "TruthGenerator",
-    "ProcessModel", "ObjectStream", "Simulator", "Router", "Forecaster", "SimulationForecaster", "MarkovForecaster", "Evaluator",
+    "HistoryFeatures", "DefaultHistoryFeatures", "LatentModel", "FeatureEncoder",
+    "StreamData", "DefaultStreamData", "StepDistribution", "ExponentialStep", "ChoiceThenTimeStep",
+    "SampledStep", "ChoiceThenTimeModel", "Selector", "SampleSelector", "MostLikelySelector",
+    "BestSelector", "WorstSelector", "Censoring", "StudyEnd", "RandomLoss",
+    "generation", "forecasting", "LogGenerator", "ModelGenerator",
+    "ProcessModel", "Forecaster", "SimulationForecaster", "MarkovForecaster", "GridForecaster", "Evaluator",
+
     "Metric", "register_metric", "evaluate", "compare", "compare_networks", "available_metrics", "long_format",
     "Visualizer", "MatplotlibVisualizer", "GraphvizVisualizer",
     # прежний API

@@ -9,10 +9,6 @@ from ..features import values_at
 DAY = pd.Timedelta(days=1)
 
 
-class FeatureUpdater(Protocol):
-    def __call__(self, X, state, t, rng): ...
-
-
 class HistoryFeatures(Protocol):
     def fit(self, train_log): ...
     def transform(self, log, case_id, as_of): ...

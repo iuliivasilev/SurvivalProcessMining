@@ -48,7 +48,8 @@ class EventLog:
     rules: dict = None
 
     def __post_init__(self):
-        times = pd.concat([self.events[["case_id", "timestamp"]], self.measurements[["case_id", "timestamp"]]])
+        parts = [t[["case_id", "timestamp"]] for t in (self.events, self.measurements) if len(t)]
+        times = pd.concat(parts) if parts else self.events[["case_id", "timestamp"]]
         seen = times.groupby("case_id")["timestamp"].max()
         self.last_seen = (seen if self.last_seen is None
                           else pd.concat([self.last_seen, seen]).groupby(level=0).max())
@@ -207,3 +208,87 @@ class EventLog:
         measurements = measurements.sort_values(["case_id", "timestamp"], kind="stable").reset_index(drop=True)
         return EventLog(self.events, self.cases, measurements, last_seen,
                         self.observation, None if self.rules is None else dict(self.rules))
+
+    # --- момент «сейчас», старт генерации, цензура, трассы -----------------------------------
+    @property
+    def now(self):
+        """Момент «сейчас» каждого объекта: ``observation.end`` (Series по ``case_id``)."""
+        return self.observation.set_index("case_id")["end"]
+
+    def cut(self, t):
+        """Журнал, каким он был на момент ``t``: события и замеры не позже ``t``, ``end = t``.
+
+        ``t`` — дата или Series ``case_id → дата`` (свой момент у каждого объекта). Объекты,
+        начавшиеся после ``t``, исключаются; у объектов, наблюдение которых закончилось раньше
+        ``t``, таблица наблюдения не меняется. У обрезанных ``event = 0``, ``reason = "cut"``.
+        Нужен для проверки на истории; живой журнал уже обрезан на «сейчас».
+        """
+        ids = pd.Index(self.case_ids)
+        if isinstance(t, pd.Series):
+            cutoff = pd.to_datetime(t, utc=True).reindex(ids)
+            if cutoff.isna().any():
+                raise ValueError("cut: для каждого объекта журнала нужна дата")
+        else:
+            cutoff = pd.Series(pd.to_datetime(t, utc=True), index=ids)
+        cutoff.index.name = "case_id"
+        events = self.events.loc[self.events.timestamp <= self.events.case_id.map(cutoff)].copy()
+        kept = set(events.case_id)
+        measurements = self.measurements.loc[self.measurements.case_id.isin(kept)]
+        measurements = measurements.loc[measurements.timestamp <= measurements.case_id.map(cutoff)].copy()
+        observation = self.observation.loc[self.observation.case_id.isin(kept)].copy()
+        limit = observation.case_id.map(cutoff)
+        later = observation.end > limit
+        observation.loc[later, "end"] = limit[later]
+        observation.loc[later, "event"] = 0
+        observation.loc[later, "reason"] = "cut"
+        last_seen = self.last_seen.loc[self.last_seen.index.isin(kept)]
+        last_seen = pd.concat([last_seen, cutoff.loc[list(kept)]], axis=1).min(axis=1)
+        return EventLog(events, self.cases.loc[self.cases.index.isin(kept)].copy(), measurements,
+                        last_seen, observation, None if self.rules is None else dict(self.rules))
+
+    @classmethod
+    def start(cls, n, state, t="2025-01-01", X=None, prefix="case-", rules=None):
+        """``n`` новых объектов в состоянии ``state`` в момент ``t``: вход для генерации.
+
+        ``X`` — статические признаки (словарь, общий для всех объектов) в таблице ``cases``.
+        """
+        t = pd.Timestamp(t)
+        t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+        ids = [f"{prefix}{i}" for i in range(n)]
+        events = pd.DataFrame(dict(case_id=ids, activity=state, timestamp=t),
+                              columns=["case_id", "activity", "timestamp"])
+        cases = pd.DataFrame({k: [v]*n for k, v in dict(X or {}).items()}, index=pd.Index(ids, name="case_id"))
+        observation = pd.DataFrame(dict(case_id=ids, end=t, event=0, reason="start"),
+                                   columns=["case_id", "end", "event", "reason"])
+        return cls(events, cases, pd.DataFrame(columns=MEASUREMENT_COLUMNS), None, observation, rules)
+
+    def starts(self, prefix=""):
+        """Те же объекты с начала: только первое событие каждого объекта, ``end`` — его момент.
+
+        Вход для генерации «как в журнале» (те же состояния и моменты старта, те же
+        статические признаки); ``prefix`` добавляется к ``case_id``.
+        """
+        first = self.events.sort_values("timestamp", kind="stable").groupby("case_id", sort=False).head(1)
+        first = first.set_index("case_id").loc[[c for c in self.case_ids]].reset_index()
+        ids = [f"{prefix}{c}" for c in first.case_id]
+        events = pd.DataFrame(dict(case_id=ids, activity=first.activity.to_numpy(), timestamp=first.timestamp.to_numpy()))
+        cases = self.cases.reindex(first.case_id)
+        cases.index = pd.Index(ids, name="case_id")
+        observation = pd.DataFrame(dict(case_id=ids, end=first.timestamp.to_numpy(), event=0, reason="start"))
+        return EventLog(events, cases, pd.DataFrame(columns=MEASUREMENT_COLUMNS), None, observation,
+                        None if self.rules is None else dict(self.rules))
+
+    def censor(self, rule, seed=None):
+        """Цензура поверх готового журнала: ``rule`` — :class:`~survpm.censoring.Censoring`
+        (например ``StudyEnd(days=90) + RandomLoss(mean_days=60)``). Причина — ``reason`` правила."""
+        return rule.apply(self, seed)
+
+    def traces(self):
+        """``[(состояния, дни от старта), ...]`` по объектам в порядке журнала."""
+        result = []
+        for _, group in self.events.sort_values("timestamp", kind="stable").groupby("case_id", sort=False):
+            days = ((group.timestamp - group.timestamp.iloc[0]) / pd.Timedelta(days=1)).tolist()
+            result.append((group.activity.tolist(), days))
+        order = {c: i for i, c in enumerate(self.case_ids)}
+        ids = self.events.sort_values("timestamp", kind="stable").case_id.drop_duplicates().tolist()
+        return [result[i] for i in sorted(range(len(ids)), key=lambda i: order[ids[i]])]

@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .features import read_log
-from .generation import TruthGenerator
+from ._truth import TruthGenerator
 from .log import read_csv
 
 AD_START = "A"
@@ -44,7 +44,7 @@ def generate_ad(n_cases, seed, transitions=AD_TRANSITIONS, start=AD_START, termi
         raw, censoring = generate_ad(1000, seed=2026)
         log, cases = survpm.prepare(raw, "A", "D", censoring["end"], censoring["reason"])
 
-    Генератор — :class:`survpm.TruthGenerator`; :func:`generate_ad_log` даёт тот же журнал как ``EventLog``.
+    Генератор — внутренний :class:`survpm._truth.TruthGenerator`; :func:`generate_ad_log` даёт тот же журнал как ``EventLog``.
     """
     generator = ad_generator(seed, transitions, start, terminal, loss_mean_days, study_start, enroll_days)
     rows, censoring = [], {}
@@ -76,7 +76,7 @@ class _StudyGenerator(TruthGenerator):
 def ad_generator(seed, transitions=AD_TRANSITIONS, start=AD_START, terminal=AD_TERMINAL,
                  loss_mean_days=LOSS_MEAN_DAYS, study_start=pd.Timestamp("2025-01-01", tz="UTC"),
                  enroll_days=60, study_days=90):
-    """:class:`survpm.TruthGenerator` синтетики A–D (общий поток случайных чисел, как прежде)."""
+    """внутренний :class:`survpm._truth.TruthGenerator` синтетики A–D (общий поток случайных чисел, как прежде)."""
     return _StudyGenerator(transitions, start, terminal, seed=seed, rng="shared", max_steps=10_000,
                            loss_mean_days=loss_mean_days, origin=study_start, enroll_days=enroll_days,
                            study_days=study_days)

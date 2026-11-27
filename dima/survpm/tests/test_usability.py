@@ -14,7 +14,7 @@ def generated(n=60, seed=0):
     network = survpm.Network.from_edges([('A', 'B'), ('A', 'D'), ('B', 'B'), ('B', 'D')], ['A'], ['D'])
     truth = survpm.ProcessModel(network, survpm.ExponentialTransitionModel(
         {('A', 'B'): 1., ('A', 'D'): .5, ('B', 'B'): .3, ('B', 'D'): .6}))
-    log = survpm.Simulator(truth, seed=seed).run(survpm.ObjectStream.start(n, 'A', ORIGIN), horizon=3.)
+    log = survpm.ModelGenerator(truth, seed=seed).generate(survpm.EventLog.start(n, 'A', ORIGIN), horizon=3.)
     return truth, log.prepare(RULES)
 
 
@@ -49,9 +49,9 @@ def test_select_split_and_folds_keep_whole_cases():
 
 def test_streams_are_reusable_and_built_from_logs():
     truth, log = generated(20)
-    stream = survpm.ObjectStream.from_log(log, prefix='sim-')
-    first = survpm.Simulator(truth, seed=2).run(stream, horizon=5.)
-    again = survpm.Simulator(truth, seed=2).run(stream, horizon=5.)
+    starts = log.starts(prefix='sim-')
+    first = survpm.ModelGenerator(truth, seed=2).generate(starts, horizon=5.)
+    again = survpm.ModelGenerator(truth, seed=2).generate(starts, horizon=5.)
     pd.testing.assert_frame_equal(first.events, again.events)
     assert sorted(first.case_ids) == sorted(f'sim-{c}' for c in log.case_ids)
     starts = first.events.groupby('case_id').timestamp.min()

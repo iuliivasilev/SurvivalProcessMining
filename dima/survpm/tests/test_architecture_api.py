@@ -83,19 +83,19 @@ def test_network_comparison_mapping_and_empty():
 def test_roundtrip_and_public_imports():
     from survpm.log import EventLog
     from survpm import (discover, DirectlyFollowsBackend, PetriBackend, Pm4pyBackend,
-                        DefaultHistoryFeatures, FeatureUpdater, LatentModel, Metric,
+                        DefaultHistoryFeatures, LatentModel, Metric,
                         register_transition_model, create_transition_model)
     from survpm.models import LatentModel as ModelLatent
     assert ModelLatent is LatentModel
     network, train = sample()
     model = survpm.ProcessModel(network).fit(train)
     assert isinstance(train, EventLog)
-    stream = survpm.ObjectStream([dict(case_id='new', state='A', t='2025-01-01', X={})])
-    generated = survpm.Simulator(model, seed=7).run(stream, horizon=10)
+    start = survpm.EventLog.start(1, 'A', '2025-01-01', prefix='new')
+    generated = survpm.ModelGenerator(model, seed=7).generate(start, horizon=10)
     found = discover(generated, DirectlyFollowsBackend(['A'], ['D']))
     assert isinstance(found, survpm.Network)
-    estimate = survpm.Forecaster(model, n_paths=5, seed=7).survival(
-        generated, pd.Timestamp('2025-01-01', tz='UTC'), [1., 2.], case_id='new')
+    estimate = survpm.SimulationForecaster(model, n_paths=5, seed=7).survival(
+        start, [1., 2.])
     assert estimate.survival.between(0, 1).all()
     assert np.isfinite(survpm.evaluate(model, train).value).all()
 
