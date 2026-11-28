@@ -118,7 +118,7 @@ class ExponentialTransitionModel:
         batch = isinstance(X, pd.DataFrame)
         frame = X if batch else pd.DataFrame([{} if X is None else X])
         if self.encoder is not None and not batch:
-            # Контекст объекта (dict от HistoryFeatures/Simulator): признака нет, если анализ ещё
+            # Контекст объекта (строка X от StreamData): признака нет, если анализ ещё
             # не делали на момент входа. Это пропуск, как при обучении: медиана + индикатор.
             # Таблица-батч проверяется строго.
             frame = frame.reindex(columns=self.encoder.columns_)

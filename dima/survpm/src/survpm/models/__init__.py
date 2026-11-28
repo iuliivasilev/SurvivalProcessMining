@@ -1,9 +1,9 @@
-"""Replaceable transition, history and feature-update components."""
-from .features import FeatureUpdater, HistoryFeatures, DefaultHistoryFeatures, LatentModel
+"""Replaceable transition and history components."""
+from .features import HistoryFeatures, DefaultHistoryFeatures, LatentModel
 from .transitions import (TransitionModel, TransitionPicker, MinTimePicker,
                           ExponentialTransitionModel, register_transition_model,
                           create_transition_model)
 
-__all__ = ['FeatureUpdater', 'HistoryFeatures', 'DefaultHistoryFeatures', 'LatentModel',
+__all__ = ['HistoryFeatures', 'DefaultHistoryFeatures', 'LatentModel',
            'TransitionModel', 'TransitionPicker', 'MinTimePicker',
            'ExponentialTransitionModel', 'register_transition_model', 'create_transition_model']

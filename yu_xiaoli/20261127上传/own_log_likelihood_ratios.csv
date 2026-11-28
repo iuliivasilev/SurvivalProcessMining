@@ -1,0 +1,5 @@
+log,net_pair,mean_log_ratio_per_event,geometric_ratio_per_event,n
+browser,browser_minus_mixed_discovered,0.173387,1.189326,2000
+explorer,explorer_minus_mixed_discovered,0.090969,1.095235,2000
+abandoner,abandoner_minus_mixed_discovered,0.225959,1.253524,2000
+converter,converter_minus_mixed_discovered,0.111457,1.117905,2000

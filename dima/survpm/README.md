@@ -31,14 +31,16 @@ train, test = log.split(seed=1)                       # целые объект�
 model = survpm.ProcessModel().fit(train)              # сеть = DFG по train, интенсивности с цензурой
 model.edges_table()                                   # rate, p, mean_days по рёбрам
 
-stream = survpm.ObjectStream.from_log(train, prefix="syn-")   # те же объекты, те же моменты старта
-synthetic = survpm.Simulator(model, seed=1).run(stream, horizon=60)
+start = survpm.EventLog.start(1000, "Registration", "2025-01-01")    # 1000 новых объектов
+synthetic = survpm.ModelGenerator(model, seed=1).generate(start, horizon=60)
 survpm.compare_networks(model.network, survpm.discover(synthetic))   # восстановление сети
 survpm.ProcessModel(model.network).fit(synthetic).edges_table()      # восстановление rate
 
 case = test.case_ids[0]
-as_of = test.events.loc[test.events.case_id == case, "timestamp"].iloc[1]
-survpm.Forecaster(model, n_paths=1000, seed=1).survival(test, as_of, [1, 7, 30], case_id=case)
+t = test.events.loc[test.events.case_id == case, "timestamp"].iloc[1]
+now = test.cut(t).select([case])                     # журнал на момент t: «сейчас» = end
+survpm.MarkovForecaster(model).survival(now, [1, 7, 30])                       # точно, X фиксированы
+survpm.SimulationForecaster(model, n_paths=1000, seed=1).survival(now, [1, 7, 30])   # Монте-Карло
 
 survpm.evaluate(model, test, "all")                   # все метрики: level, model, metric, value
 model.plot()                                          # сеть с p и rate (graphviz)
@@ -63,7 +65,7 @@ model.save("sepsis.pkl"); survpm.ProcessModel.load("sepsis.pkl")
 | Выборка объектов | `log.select(ids)`, `log.case_ids` |
 | Разбиение | `log.split(seed=1, ratio=.8)`; без seed — первые объекты; `log.split("temporal", cutoff=...)` |
 | Фолды | `log.folds(k=5, seed=2026)` — список `(train, test)`, доля цензуры в фолдах одинакова |
-| Признаки на момент | `log.features_at(case_id, t, cutoff=as_of)`, `survpm.features.at_entry(intervals, log)` |
+| Признаки на момент | `log.features_at(case_id, t)`, `DefaultStreamData().at(log.cut(t))`, `survpm.features.at_entry(intervals, log)` |
 
 Правила, заданные в `prepare`, сохраняются в `log.rules`. Начальные и терминальные состояния
 дальше **не нужно повторять**: их берут `discover`, `DirectlyFollowsBackend`, `Pm4pyBackend`,
@@ -103,69 +105,95 @@ featured = survpm.ProcessModel(network, survpm.ExponentialTransitionModel(log_fe
 
 ## Генерация, применение, прогноз
 
-```python
-stream = survpm.ObjectStream.start(100, "A", "2025-01-01", X={"Age": 70})   # n новых объектов
-stream = survpm.ObjectStream.from_log(train, prefix="syn-")                  # как объекты журнала
-log = survpm.Simulator(model, seed=1).run(stream, horizon=60)               # EventLog; поток не меняется
-path = survpm.Router(model, seed=1).run(test, case_id, as_of, horizon=30)   # один путь от as_of
-f = survpm.Forecaster(model, n_paths=1000, seed=1)
-f.survival(test, as_of, times, case_id=case_id)          # S(t) до терминала, t — дни от as_of
-f.terminal_probs(...), f.hazard(...), f.expected_time(test, as_of, horizon=30, case_id=case_id)
-```
-
-Прогноз видит только историю до `as_of`. `updater(X, state, t, rng)` в `ObjectStream`
-меняет X при входе в состояние; `future_features` в `Router`/`Forecaster` — сценарий будущих X.
-
-### Свой прогноз: `Forecaster`
-
-`survpm.Forecaster` — базовый класс с одним обязательным методом `cumulative_incidence(case, times)`:
-F_k(t) = P(T ≤ t, исход = k | история до as_of), таблица `horizon, outcome, cdf`. База обрезает
-историю на `as_of`, строит `Case` (`context`), проверяет ответ (0 ≤ F_k ≤ 1, не убывает, Σ_k F_k ≤ 1)
-и выводит остальное по определению: `survival` (S = 1 − Σ F_k), `terminal_probs`, `hazard`
-((F_k(b) − F_k(a)) / S(a) / (b − a)), `expected_time` (∫₀ʰ S dt). `case_id` может быть списком.
+Вход и выход всех компонентов — `EventLog` с колонкой `end` в `observation` («наблюдали до» —
+момент «сейчас» объекта). Общий цикл генерации записан в базе и не меняется:
 
 ```python
-class AlwaysExp(survpm.Forecaster):
-    def cumulative_incidence(self, case, times):
-        return pd.DataFrame(dict(horizon=times, outcome="D", cdf=1 - np.exp(-.5 * np.asarray(times))))
-
-AlwaysExp(terminals=["D"]).survival(test, as_of, [1, 7, 30], case_id=case)
+X    = data.at(log)                       # StreamData: где объект и какие признаки
+step = model.predict(X)                   # ProcessModel: куда и через сколько
+move = selector.select(X, step, rng)      # Selector: какой переход
+log  = log.append(move)                   # новое событие, end += dt
 ```
 
-| Реализация | Метод | Точность |
-|---|---|---|
-| `MarkovForecaster(model)` | F_k(t) = [exp(Q t)]_{s,k}, экспоненциальные времена, X фиксированы на as_of | точно |
-| `SimulationForecaster(model, n_paths, seed, future_features)` | Монте-Карло по `LogGenerator` (метод `generator`) | колонка `se` = √(F(1−F)/n) |
+```python
+start = survpm.EventLog.start(100, "A", "2025-01-01", X={"Age": 70})   # n новых объектов
+same = train.starts(prefix="syn-")         # те же объекты с начала: первое событие каждого
+now = test.cut(t)                          # журнал на момент t (только для проверки на истории)
+X = survpm.DefaultStreamData().at(now)     # таблица: case_id, state, elapsed, time, признаки
+model.predict(X)                           # закон шага для каждой строки (StepDistribution)
+log = survpm.ModelGenerator(model, seed=1).generate(start, horizon=60)       # EventLog
+log = log.censor(survpm.StudyEnd(days=90) + survpm.RandomLoss(mean_days=60))  # цензура поверх
+log.traces()                               # [(состояния, дни от старта)] того же прогона
+survpm.ModelGenerator(model, survpm.BestSelector("Discharge")).generate(now)  # продолжение по правилу
+f = survpm.MarkovForecaster(model)         # или GridForecaster, SimulationForecaster
+f.survival(now, [1, 7, 30]); f.terminal_probs(now, [30]); f.hazard(now, [1, 7]); f.expected_time(now, 30)
+```
 
-`survpm.Forecaster(model, n_paths=..., seed=...)` создаёт `SimulationForecaster` (как раньше, те же
-числа), `method="markov"` — `MarkovForecaster`.
+`times` — дни от `end` объекта. Ответ — таблица с колонкой `case_id` (по строке на объект и горизонт).
+
+* **`StreamData`** — признаки к моменту «сейчас», один метод `at(log) -> X`. `DefaultStreamData`:
+  последнее состояние, `elapsed` (дни в нём), статические признаки, последние замеры на входе,
+  `history_visits`, `history_elapsed_days`. Своя динамика признаков — свой `at`; признаки, которые
+  меняются при генерации, пишутся в журнал замерами.
+* **`model.predict(X)`** — список `StepDistribution` по строкам X: `dst`, `p`, `sample(rng)`,
+  `sample_time(j, rng)`, `mean_time(j)`, `time_cdf(t)`. Реализации: `ExponentialStep`
+  (`ExponentialTransitionModel`), `ChoiceThenTimeStep` (`ChoiceThenTimeModel(edges)` — заданная истина,
+  выход по `p`, время из `dist`), `SampledStep` (модель только с `next_transition`).
+* **`Selector`** — правило выбора, один метод `weights(X, steps) -> case_id, dst, weight`; `select`
+  (розыгрыш по весам, время из закона) — в базе. Готовые: `SampleSelector` (по закону, по умолчанию),
+  `MostLikelySelector`, `BestSelector(target)`, `WorstSelector(target)` (по вероятности дойти до
+  `target`, дальше — по закону). Selector принимают и генератор, и прогноз.
+* **`Censoring`** — `StudyEnd(days)`, `RandomLoss(mean_days)`, сумма правил `a + b`; свой — метод `times(log, rng)`.
 
 ### Свой генератор: `LogGenerator`
-
-Все генераторы — подклассы `survpm.LogGenerator`. Подклассу нужны два метода, остальное
-(цикл по шагам, `horizon`, `max_steps`, случайность, сборка `EventLog` с `observation`) — в базе:
 
 ```python
 class Coin(survpm.LogGenerator):
     terminals = {"Done"}
 
-    def start_cases(self, n, rng):                 # начальные объекты (список или yield)
-        return [survpm.Case(f"c{i}", "Start", "2025-01-01") for i in range(n)]
+    def step(self, X, rng, **kw):              # по строке на объект: case_id, dst, dt (+ reason)
+        return pd.DataFrame(dict(case_id=X.case_id,
+                                 dst=["Done" if r.random() < .5 else "Start" for r in rng],
+                                 dt=[r.exponential(1.) for r in rng]))
 
-    def next_step(self, case, rng):                # Step(dst, dt в днях) или None — выхода нет
-        return survpm.Step("Done" if rng.random() < .5 else "Start", rng.exponential(1.))
-
-log = Coin(seed=1, horizon=30).generate(200)       # EventLog
-traces = Coin(seed=1).traces(200)                  # быстро: [(состояния, дни от старта), ...]
+log = Coin(seed=1).generate(survpm.EventLog.start(200, "Start"), horizon=30)
 ```
 
-* `Step(None, dt, "lost")` — наблюдение обрывается через `dt` дней без события (потеря).
-* `on_enter(case, rng)` — необязательный хук: признаки `X` на входе в состояние (пишутся в `measurements`).
-* `Case(..., horizon=...)` — свой горизонт объекта; `rng="per_case"` (по умолчанию) — поток
-  случайных чисел по `case_id`, `rng="shared"` — один поток на журнал.
-* Готовые: `ModelGenerator(model, stream)` — по `ProcessModel` (на нём `Simulator`);
-  `TruthGenerator(edges, start, terminals, loss_mean_days=..., stop=...)` — по рёбрам `src, dst, p, dist`
-  (на нём `datasets.generate_ad`, `datasets.generate_ad_log` и `CensoredStateNet.simulate`).
+`rng` — поток случайных чисел каждой строки (по `case_id`, результат не зависит от порядка объектов).
+`dst=None, dt=inf` — выхода нет (`dead_end`); `dst=None, dt, reason="lost"` — обрыв наблюдения.
+`generate(log, max_steps=1000, horizon=None)`: причины остановки в `observation.reason` — `""`
+(терминал), `horizon`, `max_steps`, `dead_end`, `lost`. Готовый — `ModelGenerator(model, selector, data, seed)`.
+
+### Свой прогноз: `Forecaster`
+
+Один обязательный метод `cumulative_incidence(X, times)`: F_k(t) = P(T ≤ t, исход = k | журнал до end),
+таблица `horizon, outcome, cdf` (+ `case_id`, если строк несколько). База строит X (`data.at(log)`),
+проверяет ответ (0 ≤ F_k ≤ 1, не убывает, Σ_k F_k ≤ 1) и выводит `survival` (S = 1 − Σ F_k),
+`terminal_probs`, `hazard` ((F_k(b) − F_k(a)) / S(a) / (b − a)), `expected_time` (∫₀ʰ S dt).
+
+```python
+class AlwaysExp(survpm.Forecaster):
+    def cumulative_incidence(self, X, times, **kw):
+        return pd.DataFrame(dict(horizon=times, outcome="D", cdf=1 - np.exp(-.5 * np.asarray(times))))
+
+AlwaysExp(terminals=["D"]).survival(test.cut(t), [1, 7, 30])
+```
+
+| Реализация | Метод | Точность |
+|---|---|---|
+| `MarkovForecaster(model, selector)` | F_k(t) = [exp(Q t)]_{s,k}, Q = Λ·w | точно для экспоненциального закона при X, фиксированных после end |
+| `GridForecaster(model, selector, n_grid)` | уравнение марковского восстановления на сетке, любой закон с `time_cdf` | O(h²) |
+| `SimulationForecaster(model, n_paths, seed, selector)` | доля из n путей `ModelGenerator` (признаки пересчитываются на каждом шаге) | колонка `se` = √(F(1−F)/n) |
+
+### Прежний интерфейс
+
+Удалён 26.11: `ObjectStream`, `Simulator`, `Router`, `FeatureUpdater`, вызовы с `as_of` и движок на
+объектах `Case` (модули `legacy_generation`, `legacy_forecasting`) лежат в `dima/archive/`. Замена:
+`ObjectStream.start(n, s, t)` → `EventLog.start(n, s, t)`, `ObjectStream.from_log(log)` → `log.starts()`,
+`Simulator(model).run(stream)` → `ModelGenerator(model).generate(log)`,
+`Router(model).run(log, case_id, as_of)` → `ModelGenerator(model).generate(log.cut(as_of).select([case_id]))`,
+`Forecaster(model).survival(log, as_of, times)` → `SimulationForecaster(model).survival(log.cut(as_of), times)`
+(или `MarkovForecaster`), `updater` → своя реализация `StreamData.at`.
 
 ## Метрики
 
@@ -220,9 +248,12 @@ survpm.MatplotlibVisualizer().plot_edge_curves(model, ("A", "B"))   # P(выхо
 | Структура процесса | `PetriBackend.discover(log) → Network` | `DirectlyFollowsBackend`, `Pm4pyBackend` |
 | Время и направление переходов | `TransitionModel` (`fit`, `transition_parameters`, `next_transition`, `log_likelihood`) | `ExponentialTransitionModel`; `register_transition_model(name, factory)` |
 | Признаки из истории | `HistoryFeatures` (`fit`, `transform`, `at_entry`) | `DefaultHistoryFeatures` |
-| Изменение X при входе | `FeatureUpdater(X, state, t, rng)` | функция |
-| Генерация журнала | подкласс `LogGenerator` (`start_cases`, `next_step`) | `ModelGenerator`, `TruthGenerator` |
-| Прогноз | подкласс `Forecaster` (`cumulative_incidence`) | `SimulationForecaster`, `MarkovForecaster` |
+| Признаки к моменту «сейчас» | подкласс `StreamData` (`at`) | `DefaultStreamData` |
+| Закон шага | `predict(X) → [StepDistribution]` у модели переходов | `ExponentialStep`, `ChoiceThenTimeModel` |
+| Правило выбора перехода | подкласс `Selector` (`weights`) | `SampleSelector`, `MostLikelySelector`, `BestSelector`, `WorstSelector` |
+| Генерация журнала | подкласс `LogGenerator` (`step`) | `ModelGenerator` |
+| Цензура | подкласс `Censoring` (`times`) | `StudyEnd`, `RandomLoss` |
+| Прогноз | подкласс `Forecaster` (`cumulative_incidence`) | `MarkovForecaster`, `GridForecaster`, `SimulationForecaster` |
 | Метрика | `(model, log) → число или таблица metric/value` | `register_metric` |
 | Рисунок | `Visualizer` | `GraphvizVisualizer`, `MatplotlibVisualizer` |
 
@@ -234,12 +265,16 @@ survpm.MatplotlibVisualizer().plot_edge_curves(model, ("A", "B"))   # P(выхо
 | `features` | чтение журналов, признаки на моменты (`values_at`, `at_entry`, `split`) |
 | `log` | подготовка трасс и интервалы на уровне таблиц |
 | `network`, `discovery` | `Network`, `discover`, `DirectlyFollowsBackend` |
-| `models` | `TransitionModel`, `ExponentialTransitionModel`, `HistoryFeatures`, `FeatureUpdater` |
+| `models` | `TransitionModel`, `ExponentialTransitionModel`, `HistoryFeatures` |
 | `encoding` | `FeatureEncoder` |
 | `process` | `ProcessModel` |
-| `generation` | `LogGenerator`, `Case`, `Step`, `ModelGenerator`, `TruthGenerator` |
-| `forecasting` | `Forecaster`, `SimulationForecaster`, `MarkovForecaster` |
-| `engine` | `ObjectStream`, `Simulator`, `Router`, `Evaluator` |
+| `streamdata` | `StreamData`, `DefaultStreamData` |
+| `steps` | `StepDistribution`, `ExponentialStep`, `ChoiceThenTimeStep`, `SampledStep`, `ChoiceThenTimeModel` |
+| `selection` | `Selector`, `SampleSelector`, `MostLikelySelector`, `BestSelector`, `WorstSelector` |
+| `censoring` | `Censoring`, `StudyEnd`, `RandomLoss` |
+| `generation` | `LogGenerator`, `ModelGenerator` |
+| `forecasting` | `Forecaster`, `MarkovForecaster`, `GridForecaster`, `SimulationForecaster` |
+| `engine` | `Evaluator` (NLL на журнале) |
 | `metrics` | `evaluate`, `compare`, уровни 1–4, `crossval` |
 | `viz` | `GraphvizVisualizer`, `MatplotlibVisualizer`, `state_graph` |
 | `adapters` | PM4Py (сеть Петри, DFG), Ebi (SDFA) — по требованию |

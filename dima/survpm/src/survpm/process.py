@@ -8,7 +8,7 @@ import pandas as pd
 
 from .eventlog import EventLog
 from .log import prepare, intervals
-from .models.transitions import ExponentialTransitionModel
+from .models.transitions import ExponentialTransitionModel, MinTimePicker
 from .models.features import DefaultHistoryFeatures
 
 
@@ -93,6 +93,53 @@ class ProcessModel:
         result.history_features = builder
         result.transitions = self.transitions.fit(iv, self.network, X)
         return result
+
+    def predict(self, X, **kw):
+        """Закон одного шага для каждой строки X: список :class:`~survpm.steps.StepDistribution`.
+
+        X — таблица (или словарь для одной строки) с колонками ``state``, ``elapsed`` (по
+        умолчанию 0) и признаками. Для :class:`~survpm.ExponentialTransitionModel` шаг —
+        :class:`~survpm.steps.ExponentialStep` по интенсивностям ``transition_parameters``;
+        модель переходов со своим ``predict(X)`` отвечает сама; модель со своим
+        ``next_transition(state, X, history, rng, elapsed)`` даёт
+        :class:`~survpm.steps.SampledStep` (только розыгрыш; ``X`` — признаки строки,
+        ``history`` — входы объекта в состояния по журналу ``log`` до ``end``, если он передан).
+        """
+        from .steps import EmptyStep, ExponentialStep, SampledStep
+        from .streamdata import frame, features_of
+        X = frame(X)
+        transitions = self.transitions
+        log = kw.pop('log', None)
+        if hasattr(transitions, 'predict'):
+            return transitions.predict(X, network=self.network, **kw)
+        steps = [None]*len(X)
+        terminals = set(self.network.terminals)
+        for state, rows in X.groupby('state', sort=False).groups.items():
+            rows = list(rows)
+            if state in terminals or not self.network.outgoing(state):
+                for i in rows:
+                    steps[i] = EmptyStep()
+                continue
+            if isinstance(transitions, ExponentialTransitionModel) and \
+                    type(transitions).next_transition is ExponentialTransitionModel.next_transition:
+                encoder = transitions.encoder
+                part = X.loc[rows]
+                if encoder is not None:
+                    params = transitions.transition_parameters(state, part.reindex(columns=encoder.columns_))
+                else:
+                    params = [transitions.transition_parameters(state, {})]*len(rows)
+                for i, rates in zip(rows, params):
+                    steps[i] = ExponentialStep(rates, transitions.picker
+                                               if not isinstance(transitions.picker, MinTimePicker) else None)
+                continue
+            for i in rows:
+                features, elapsed = features_of(X.loc[i]), float(X.loc[i, 'elapsed'])
+                history = _visits(log, X.loc[i, 'case_id'], features) if log is not None and 'case_id' in X else []
+                def draw(rng, state=state, features=features, elapsed=elapsed, history=history):
+                    dst, dt = self.next_transition(state, features, history, rng, elapsed=elapsed)
+                    return (None, np.inf) if dst is None else (dst, dt)
+                steps[i] = SampledStep(draw, self.network.outgoing(state))
+        return steps
 
     def transition_parameters(self, state, X=None, history=None):
         return self.transitions.transition_parameters(state, X, history)
@@ -208,3 +255,15 @@ class ProcessModel:
         if not isinstance(model, cls):
             raise TypeError(f'В файле не {cls.__name__}')
         return model
+
+
+def _visits(log, case_id, features):
+    """Входы объекта в состояния до его ``end``: ``[{activity, timestamp, X}]`` (X — у последнего)."""
+    end = log.now.get(case_id)
+    ev = log.events.loc[log.events.case_id == case_id]
+    if end is not None:
+        ev = ev.loc[ev.timestamp <= end]
+    out = [dict(activity=a, timestamp=t, X={}) for a, t in zip(ev.activity, ev.timestamp)]
+    if out:
+        out[-1]['X'] = dict(features)
+    return out

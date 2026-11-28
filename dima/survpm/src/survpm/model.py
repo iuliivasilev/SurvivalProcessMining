@@ -8,7 +8,7 @@ from .distributions import CANDIDATE_FAMILIES, dist_str, mean_time, scipy_args, 
 from .estimation import estimate_network, source_nll
 from .eventlog import EventLog
 from .log import censoring_summary, intervals as make_intervals, prepare
-from .generation import Case, TruthGenerator
+from ._truth import Case, TruthGenerator
 from .network import Network
 from .models.transitions import ExponentialTransitionModel
 from .process import ProcessModel
@@ -229,7 +229,7 @@ class CensoredStateNet:
         """Трассы ``[(states, times), ...]``; ``censoring=True`` — обрыв с наблюдаемой вероятностью ``q``.
 
         ``horizon`` — момент цензуры каждой трассы (массив длины ``n``). Генератор —
-        :class:`survpm.TruthGenerator` с общим потоком случайных чисел."""
+        внутренний :class:`survpm._truth.TruthGenerator` с общим потоком случайных чисел."""
         self._require_profile()
         return _NetGenerator(self, n, seed, censoring, horizon).traces(n)
 

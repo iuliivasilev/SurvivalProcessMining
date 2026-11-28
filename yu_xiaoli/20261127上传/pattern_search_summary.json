@@ -1,0 +1,37 @@
+{
+  "n_enrollments_scored": 43383,
+  "n_courses": 5,
+  "max_enrollments_cap": null,
+  "log_file": "data/kdd2015/train/train/log_train_full.csv",
+  "log_rows_including_header": 8157278,
+  "feature": "L1-normalized CountVectorizer-like unigrams+bigrams of learning actions",
+  "proximity": "cosine similarity to synthetic profile centroids",
+  "type_weights": "softmax(cosine / temperature)",
+  "temperature": 0.15,
+  "average_type_weights_on_KDD": {
+    "browser": 0.19405528216120274,
+    "explorer": 0.5459164920360312,
+    "abandoner": 0.13405046852453636,
+    "converter": 0.1259777603208609
+  },
+  "soft_top_type_counts": {
+    "abandoner": 2817,
+    "explorer": 35842,
+    "browser": 4219,
+    "converter": 505
+  },
+  "kmeans_cluster_named_as_counts": {
+    "abandoner": 7741,
+    "browser": 19925,
+    "explorer": 10579,
+    "converter": 5138
+  },
+  "agreement_soft_top_vs_cluster_name": 0.3927114307447618,
+  "cluster_to_profile": {
+    "2": "explorer",
+    "1": "abandoner",
+    "0": "browser",
+    "3": "converter"
+  },
+  "shared_model_idea": "Each client is a soft mixture over the 4 Petri-net patterns: behavior ≈ sum_k w_k * Net_k, with w from proximity to synthetic centroids."
+}

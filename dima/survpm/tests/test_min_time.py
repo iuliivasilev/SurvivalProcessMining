@@ -53,22 +53,19 @@ def test_features_recover_rate_difference():
     assert m.coefficients_table()['rate'].iloc[0] == pytest.approx(.7, abs=.12)
 
 
-def test_stream_updates_at_entry_records_x_and_horizon():
+def test_generation_is_reproducible_and_horizon_censors():
     net = survpm.Network.from_edges([('A', 'B'), ('B', 'D')], ['A'], ['D'])
     model = survpm.ProcessModel(net, survpm.ExponentialTransitionModel({('A', 'B'): 2., ('B', 'D'): 2.}))
-    stream = survpm.ObjectStream(pd.DataFrame([dict(case_id='one', state='A', t=pd.Timestamp('2025-01-01', tz='UTC'), X={'x': 0})]),
-                                updater=lambda X, state, t, rng: {'x': X['x']+1})
-    log = survpm.Simulator(model, seed=1).run(stream, horizon=10.)
+    origin = pd.Timestamp('2025-01-01', tz='UTC')
+    start = survpm.EventLog.start(1, 'A', origin, X={'x': 0}, prefix='one')
+    log = survpm.ModelGenerator(model, seed=1).generate(start, horizon=10.)
     assert log.events.activity.tolist() == ['A', 'B', 'D']
-    assert log.measurements.loc[log.measurements.feature == 'x', 'value'].tolist() == [1, 2, 3]
-    # Поток многоразовый: движок исполняет копию, повтор с тем же seed даёт тот же журнал.
-    assert stream.current('one')[0] == 'A'
-    again = survpm.Simulator(model, seed=1).run(stream, horizon=10.)
+    # Вход не меняется: повтор с тем же seed даёт тот же журнал.
+    again = survpm.ModelGenerator(model, seed=1).generate(start, horizon=10.)
     pd.testing.assert_frame_equal(again.events, log.events)
-    short = survpm.ObjectStream(pd.DataFrame([dict(case_id='two', state='A', t=pd.Timestamp('2025-01-01', tz='UTC'), X={})]))
-    censored = survpm.Simulator(model, seed=1).run(short, horizon=0.)
+    censored = survpm.ModelGenerator(model, seed=1).generate(survpm.EventLog.start(1, 'A', origin, prefix='two'), horizon=0.)
     assert censored.events.activity.tolist() == ['A']
-    assert censored.last_seen['two'] == pd.Timestamp('2025-01-01', tz='UTC')
+    assert censored.last_seen['two0'] == origin
 
 
 def test_forecaster_limits_real_features_to_cutoff_and_conditions_elapsed():
@@ -79,14 +76,14 @@ def test_forecaster_limits_real_features_to_cutoff_and_conditions_elapsed():
                          pd.DataFrame(index=pd.Index(['one'], name='case_id')),
                          pd.DataFrame([('one', origin, 'x', 1.), ('one', origin+pd.Timedelta(days=20), 'x', 99.)],
                                       columns=['case_id','timestamp','feature','value']))
-    history = survpm.HistoryFeatures().transform(log, 'one', origin+pd.Timedelta(days=5))
-    assert history['X']['x'] == 1.
-    assert history['elapsed'] == 5.
-    forecast = survpm.Forecaster(model, n_paths=10000, seed=2)
-    table = forecast.survival(log, origin+pd.Timedelta(days=5), [0., 1.], case_id='one')
+    now = log.cut(origin+pd.Timedelta(days=5))
+    X = survpm.DefaultStreamData().at(now)
+    assert X.x.tolist() == [1.] and X.elapsed.tolist() == [5.]
+    forecast = survpm.SimulationForecaster(model, n_paths=10000, seed=2)
+    table = forecast.survival(now, [0., 1.])
     assert table.survival.iloc[0] == 1.
     assert table.survival.iloc[1] == pytest.approx(np.exp(-4), abs=.01)
-    outcomes = forecast.terminal_probs(log, origin, [10.], case_id='one')
+    outcomes = forecast.terminal_probs(log.cut(origin), [10.])
     assert outcomes.set_index('outcome').loc['D','probability'] == pytest.approx(.75, abs=.02)
 
 
@@ -141,8 +138,8 @@ def test_forecast_unchanged_when_future_real_measurements_are_changed():
     measurements = measurements.copy()
     measurements.loc[1,'value'] = -999.
     after = survpm.EventLog(events,cases,measurements)
-    forecast = survpm.Forecaster(model,n_paths=200,seed=4)
-    pd.testing.assert_frame_equal(forecast.survival(before,origin,[1.,5.]), forecast.survival(after,origin,[1.,5.]))
+    forecast = survpm.SimulationForecaster(model,n_paths=200,seed=4)
+    pd.testing.assert_frame_equal(forecast.survival(before.cut(origin),[1.,5.]), forecast.survival(after.cut(origin),[1.,5.]))
 
 
 def test_transition_model_rejects_censored_unknown_source():
@@ -158,8 +155,7 @@ def test_simulator_accepts_replaceable_model_without_rate_dictionary():
             return 'D', 2.
     net = survpm.Network.from_edges([('A','D')], ['A'], ['D'])
     model = survpm.ProcessModel(net, FixedTransition())
-    stream = survpm.ObjectStream([dict(case_id='one',state='A',t='2025-01-01',X={})])
-    log = survpm.Simulator(model).run(stream)
+    log = survpm.ModelGenerator(model).generate(survpm.EventLog.start(1,'A','2025-01-01'))
     assert log.events.activity.tolist() == ['A','D']
     assert log.events.timestamp.iloc[1]-log.events.timestamp.iloc[0] == pd.Timedelta(days=2)
 
@@ -172,9 +168,9 @@ def test_history_features_are_used_in_fit_and_updated_after_each_entry():
             return 'D', 1.
     net = survpm.Network.from_edges([('A','A'),('A','D')], ['A'], ['D'])
     m = survpm.ProcessModel(net, HistoryRate())
-    log = survpm.Simulator(m).run(survpm.ObjectStream([dict(case_id='one',state='A',t='2025-01-01',X={})]))
+    log = survpm.ModelGenerator(m).generate(survpm.EventLog.start(1,'A','2025-01-01'))
     assert log.events.activity.tolist() == ['A','A','D']
-    assert log.measurements.loc[log.measurements.feature == 'history_visits','value'].tolist() == [1,2,1]
+    assert log.measurements.empty          # признаки истории выводятся из событий и не пишутся в замеры
     trained = survpm.ProcessModel(net).fit(log, features=['history_visits'])
     assert 'history_visits' in trained.transitions.encoder.columns_
 
@@ -189,7 +185,7 @@ def test_forecast_does_not_add_fake_visit_at_as_of():
     log = survpm.EventLog(pd.DataFrame([('one','A',origin)],columns=['case_id','activity','timestamp']),
                          pd.DataFrame(index=['one']),pd.DataFrame(columns=['case_id','timestamp','feature','value']))
     net = survpm.Network.from_edges([('A','D')], ['A'], ['D'])
-    result = survpm.Router(survpm.ProcessModel(net,CheckHistory())).run(log,'one',origin+pd.Timedelta(days=2))
+    result = survpm.ModelGenerator(survpm.ProcessModel(net,CheckHistory())).generate(log.cut(origin+pd.Timedelta(days=2)))
     assert result.events.activity.tolist() == ['A','D']
 
 
@@ -212,8 +208,8 @@ def test_replacement_history_builder_receives_only_past_data():
     log = survpm.EventLog(events,pd.DataFrame(index=['one']),measurements)
     net = survpm.Network.from_edges([('A','D')],['A'],['D'])
     model = survpm.ProcessModel(net,survpm.ExponentialTransitionModel({('A','D'):1}),PastOnly())
-    survpm.Router(model).run(log,'one',origin,horizon=1.)
-    survpm.Forecaster(model,n_paths=5).survival(log,origin,[1.])
+    survpm.ModelGenerator(model).generate(log.cut(origin),horizon=1.)
+    survpm.SimulationForecaster(model,n_paths=5).survival(log.cut(origin),[1.])
 
 
 def test_training_features_respect_event_order_at_identical_timestamps():
